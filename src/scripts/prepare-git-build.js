@@ -20,14 +20,18 @@ function runNpm(args) {
   const result = spawnSync(cmd.command, cmd.args, {
     cwd,
     stdio: 'inherit',
-    env: process.env,
+    env: {
+      ...process.env,
+      npm_config_global: 'false',
+      npm_config_prefix: cwd,
+    },
   });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
 if (!existsSync(tscBin)) {
-  runNpm(['install', '--ignore-scripts', '--include=dev', '--no-audit', '--no-fund']);
+  runNpm(['install', '--ignore-scripts', '--include=dev', '--no-audit', '--no-fund', '--global=false', '--prefix', cwd]);
 }
 
 runNpm(['run', 'build']);
