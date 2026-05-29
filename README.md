@@ -12,15 +12,17 @@ Recommended first run from GitHub now:
 codex --version
 npm install -g github:yc9954/oh-my-goal
 omg setup
+omg start "Build the thing I actually want"
 omg --madmax --high
 ```
 
-From npm after publishing:
+From npm after package ownership is resolved and published:
 
 ```bash
 codex --version
 npm install -g oh-my-goal
 omg setup
+omg start "Build the thing I actually want"
 omg --madmax --high
 ```
 
@@ -37,7 +39,7 @@ From this repository:
 npm install
 npm run build
 node dist/cli/omg.js --help
-node dist/cli/omg.js refine --objective "Ship this safely"
+node dist/cli/omg.js start "Ship this safely"
 ```
 
 ## What It Does
@@ -53,6 +55,9 @@ node dist/cli/omg.js refine --objective "Ship this safely"
 ## Core Flow
 
 ```bash
+omg start "Build the feature safely"
+
+# Or use the lower-level flow explicitly:
 omg create --objective "Build the feature safely" --slug safe-feature
 omg interview --slug safe-feature
 omg plan --slug safe-feature

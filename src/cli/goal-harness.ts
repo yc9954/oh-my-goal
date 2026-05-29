@@ -69,7 +69,7 @@ Usage:
   omx goal-harness interview [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
   omx goal-harness plan [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
   omx goal-harness create [--objective <text> | --objective-file <path>] [--slug <slug>] [--force] [--json]
-  omx goal-harness start --slug <slug> [--json]
+  omx goal-harness start [--slug <slug>] [--objective <text> | --objective-file <path>] [--force] [--json]
   omx goal-harness status --slug <slug> [--json]
   omx goal-harness sync-goal --slug <slug> --codex-goal-json <json-or-path> [--evidence <text>] [--json]
   omx goal-harness summary --slug <slug> [--json]
@@ -94,6 +94,10 @@ Boundary:
 `;
 
 export class GoalHarnessCommandError extends Error {}
+
+export interface GoalHarnessCommandOptions {
+  commandPrefix?: 'omx goal-harness' | 'omg';
+}
 
 function hasFlag(args: readonly string[], flag: string): boolean {
   return args.includes(flag);
@@ -201,7 +205,38 @@ function printRefinement(refinement: ReturnType<typeof buildRefinedGoalPrompt>):
   console.log(`recommended skills: ${refinement.route.recommendedSkills.join(', ') || 'none'}`);
 }
 
-export async function goalHarnessCommand(args: string[]): Promise<void> {
+function displayText(text: string, options: GoalHarnessCommandOptions): string {
+  return options.commandPrefix === 'omg'
+    ? text.replaceAll('omx goal-harness', 'omg')
+    : text;
+}
+
+function printBootstrapSummary(result: {
+  created: Awaited<ReturnType<typeof createGoalHarnessRun>>;
+  intake: Awaited<ReturnType<typeof writeGoalHarnessDeepInterview>>;
+  plan: Awaited<ReturnType<typeof writeGoalHarnessRalplan>>;
+  handoff: Awaited<ReturnType<typeof startGoalHarnessRun>>;
+}, options: GoalHarnessCommandOptions): void {
+  const preferred = result.plan.artifact.candidates.find((candidate) => candidate.id === result.plan.artifact.critique.preferredCandidateId);
+  console.log(`omg bootstrap: ${result.created.run.slug}`);
+  console.log(`status: ${result.handoff.run.status}`);
+  console.log(`mission: ${result.created.missionPath}`);
+  console.log(`intake: ${result.intake.artifactPath}`);
+  console.log(`plan: ${result.plan.artifactPath}`);
+  console.log(`runtime: ${result.created.runtime.runtimePath}`);
+  console.log(`route: ${result.created.refinement.route.route}`);
+  if (preferred) console.log(`preferred trajectory: ${preferred.id} (${preferred.label})`);
+  console.log('');
+  console.log('deep interview questions:');
+  for (const question of result.intake.artifact.questions) {
+    console.log(`- ${question.id}: ${question.prompt}`);
+  }
+  console.log('');
+  console.log('Codex goal handoff:');
+  console.log(displayText(result.handoff.instruction, options));
+}
+
+export async function goalHarnessCommand(args: string[], options: GoalHarnessCommandOptions = {}): Promise<void> {
   const command = args[0] ?? 'help';
   const rest = args.slice(1);
   const json = hasFlag(rest, '--json');
@@ -282,10 +317,24 @@ export async function goalHarnessCommand(args: string[]): Promise<void> {
 
     if (command === 'start') {
       const slug = readValue(rest, '--slug');
-      if (!slug) throw new GoalHarnessCommandError('Missing --slug.');
+      const objective = (await readTextArg(rest, '--objective', '--objective-file')) ?? positionalText(rest);
+      if (objective.trim()) {
+        const created = await createGoalHarnessRun(cwd, {
+          objective,
+          slug,
+          force: hasFlag(rest, '--force'),
+        });
+        const intake = await writeGoalHarnessDeepInterview(cwd, created.run.slug);
+        const plan = await writeGoalHarnessRalplan(cwd, created.run.slug);
+        const handoff = await startGoalHarnessRun(cwd, created.run.slug);
+        if (json) printJson({ ok: true, created, intake, plan, handoff });
+        else printBootstrapSummary({ created, intake, plan, handoff }, options);
+        return;
+      }
+      if (!slug) throw new GoalHarnessCommandError('Missing objective or --slug.');
       const result = await startGoalHarnessRun(cwd, slug);
       if (json) printJson({ ok: true, ...result });
-      else console.log(result.instruction);
+      else console.log(displayText(result.instruction, options));
       return;
     }
 
@@ -373,7 +422,7 @@ export async function goalHarnessCommand(args: string[]): Promise<void> {
       else {
         console.log(nextAction.action);
         console.log(`reason: ${nextAction.reason}`);
-        if (nextAction.recommendedCommand) console.log(`command: ${nextAction.recommendedCommand}`);
+        if (nextAction.recommendedCommand) console.log(`command: ${displayText(nextAction.recommendedCommand, options)}`);
       }
       return;
     }
@@ -409,7 +458,7 @@ export async function goalHarnessCommand(args: string[]): Promise<void> {
         console.log(`leader step recorded: ${result.step.id} [${result.step.outcome}]`);
         console.log(`phase: ${result.step.phase} -> ${result.runtime.phase}`);
         console.log(`next: ${nextAction.action}`);
-        if (nextAction.recommendedCommand) console.log(`command: ${nextAction.recommendedCommand}`);
+        if (nextAction.recommendedCommand) console.log(`command: ${displayText(nextAction.recommendedCommand, options)}`);
       }
       return;
     }

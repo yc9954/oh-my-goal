@@ -13,7 +13,8 @@ Usage:
   omg interview [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
   omg plan [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
   omg create [--objective <text> | --objective-file <path>] [--slug <slug>] [--force] [--json]
-  omg start --slug <slug> [--json]
+  omg start "<objective>"
+  omg start [--slug <slug>] [--objective <text> | --objective-file <path>] [--force] [--json]
   omg status --slug <slug> [--json]
   omg sync-goal --slug <slug> --codex-goal-json <json-or-path> [--evidence <text>] [--json]
   omg summary --slug <slug> [--json]
@@ -39,6 +40,7 @@ Recommended first run:
   codex --version
   npm install -g github:yc9954/oh-my-goal
   omg setup
+  omg start "Build the thing I actually want"
   omg --madmax --high
 
 Boundary:
@@ -111,5 +113,5 @@ export async function main(args: string[]): Promise<void> {
     return;
   }
 
-  await goalHarnessCommand(args);
+  await goalHarnessCommand(args, { commandPrefix: 'omg' });
 }

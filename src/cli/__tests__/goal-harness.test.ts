@@ -101,6 +101,34 @@ describe('cli/goal-harness', () => {
     });
   });
 
+  it('bootstraps a new omg start objective through intake, plan, and handoff', async () => {
+    await withCwd(async (cwd) => {
+      const started = await capture(() => goalProductMain([
+        'start',
+        'Build a goal-first bootstrapper with interview and trajectory pressure.',
+        '--slug',
+        'omg-bootstrap',
+      ]));
+      const output = started.stdout.join('\n');
+      assert.equal(started.exitCode, undefined);
+      assert.match(output, /omg bootstrap: omg-bootstrap/);
+      assert.match(output, /deep interview questions:/);
+      assert.match(output, /Codex goal handoff:/);
+      assert.match(output, /create_goal payload:/);
+      assert.match(output, /omg gate --slug omg-bootstrap/);
+      assert.doesNotMatch(output, /omx goal-harness gate --slug omg-bootstrap/);
+
+      const mission = await readFile(join(cwd, '.omx/goals/goal-harness/omg-bootstrap/mission.md'), 'utf-8');
+      const intake = await readFile(join(cwd, '.omx/goals/goal-harness/omg-bootstrap/intake.md'), 'utf-8');
+      const plan = await readFile(join(cwd, '.omx/goals/goal-harness/omg-bootstrap/plan.md'), 'utf-8');
+      const status = JSON.parse(await readFile(join(cwd, '.omx/goals/goal-harness/omg-bootstrap/status.json'), 'utf-8')) as { status: string };
+      assert.match(mission, /Goal Harness Mission/);
+      assert.match(intake, /Goal Harness Deep Interview/);
+      assert.match(plan, /Goal Harness Ralplan/);
+      assert.equal(status.status, 'in_progress');
+    });
+  });
+
   it('rejects unsafe CLI shortcuts before they can mutate harness state', async () => {
     await withCwd(async () => {
       await capture(() => goalHarnessCommand([
