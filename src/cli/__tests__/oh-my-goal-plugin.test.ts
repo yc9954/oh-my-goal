@@ -37,6 +37,7 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(skill, /sequential-answer/);
     assert.match(skill, /cmux/i);
     assert.match(skill, /ambiguity score/i);
+    assert.match(skill, /quality-pruning/i);
     assert.match(skill, /team-runtime\.mjs/);
     assert.match(skill, /pressure-runtime\.mjs/);
     assert.match(skill, /runtime-commands\.md/);
@@ -89,12 +90,17 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(intake, /selected_values/i);
     assert.match(intake, /sequential-answer/i);
     assert.match(intake, /ambiguity score/i);
+    assert.match(intake, /Quality Frontier And Pruning/i);
+    assert.match(intake, /quality_pruning/i);
     assert.match(intake, /Gap-Fill Passes/i);
 
     const generation = readSkillRelative('flows/02-artifact-generation.md');
     assert.match(generation, /exact recommended Codex goal prompt/i);
     assert.match(generation, /Do not only summarize it/i);
     assert.match(generation, /execution-spec\.md/);
+    assert.match(generation, /quality-frontier\.md/);
+    assert.match(generation, /pruning-matrix\.md/);
+    assert.match(generation, /selected-strategy\.md/);
     assert.match(generation, /do not ask whether to implement now/i);
 
     const handoff = readSkillRelative('flows/03-goal-handoff.md');
@@ -141,7 +147,7 @@ describe('oh-my-goal plugin contract', () => {
       }>;
     };
     assert.equal(payload.source, 'oh-my-goal');
-    assert.equal(payload.questions.length, 7);
+    assert.equal(payload.questions.length, 10);
     assert.equal(payload.questions[0]?.id, 'deliverableScope');
     assert.equal(payload.questions[0]?.type, 'single-answerable');
     assert.equal(payload.questions[0]?.multi_select, false);
@@ -149,6 +155,10 @@ describe('oh-my-goal plugin contract', () => {
     assert.equal(payload.questions[6]?.type, 'multi-answerable');
     assert.equal(payload.questions[6]?.multi_select, true);
     assert.equal(payload.questions[6]?.options[1]?.value, 'no-new-dependencies');
+    assert.equal(payload.questions[7]?.id, 'qualityFrontier');
+    assert.equal(payload.questions[7]?.type, 'multi-answerable');
+    assert.equal(payload.questions[8]?.id, 'qualityPruning');
+    assert.equal(payload.questions[9]?.id, 'pruningRule');
 
     const markdownResult = spawnSync(
       process.execPath,
@@ -161,6 +171,9 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(markdownResult.stdout, /\[single-answerable\] id=deliverableScope multi_select=false/);
     assert.match(markdownResult.stdout, /label="Polished single-screen implementation" value="polished-single-screen"/);
     assert.match(markdownResult.stdout, /\[multi-answerable\] id=nonGoals multi_select=true/);
+    assert.match(markdownResult.stdout, /\[multi-answerable\] id=qualityFrontier multi_select=true/);
+    assert.match(markdownResult.stdout, /\[multi-answerable\] id=qualityPruning multi_select=true/);
+    assert.match(markdownResult.stdout, /\[single-answerable\] id=pruningRule multi_select=false/);
     assert.match(markdownResult.stdout, /answers\[\] -> \{ question_id, answer: \{ selected_values: \[\.\.\.\] \} \}/);
 
     const commandResult = spawnSync(
@@ -343,7 +356,7 @@ process.exit(0);
       assert.equal(cmuxPayload.renderer?.target, 'surface:99');
       assert.equal(cmuxPayload.renderer?.return_target, 'surface:1');
       assert.equal(cmuxPayload.renderer?.workspace, 'workspace:1');
-      assert.equal(cmuxPayload.answers.length, 7);
+      assert.equal(cmuxPayload.answers.length, 10);
       assert.equal(cmuxPayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
 
       const cmuxPrompting = spawnSync(
@@ -445,7 +458,7 @@ process.exit(0);
       assert.equal(bridgePayload.renderer?.renderer, 'tmux-pane');
       assert.equal(bridgePayload.renderer?.target, '%99');
       assert.equal(bridgePayload.renderer?.return_target, '%1');
-      assert.equal(bridgePayload.answers.length, 7);
+      assert.equal(bridgePayload.answers.length, 10);
       assert.equal(bridgePayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
 
       if (process.platform === 'darwin') {
@@ -519,7 +532,7 @@ process.exit(0);
         assert.equal(terminalPayload.ok, true);
         assert.equal(terminalPayload.renderer?.renderer, 'macos-terminal');
         assert.equal(terminalPayload.renderer?.target, 'Terminal.app');
-        assert.equal(terminalPayload.answers.length, 7);
+        assert.equal(terminalPayload.answers.length, 10);
         assert.equal(terminalPayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
 
         writeFileSync(
@@ -622,7 +635,7 @@ process.exit(0);
       assert.equal(fallbackPayload.ok, false);
       assert.equal(fallbackPayload.renderer, 'sequential');
       assert.equal(fallbackPayload.status, 'prompting');
-      assert.match(fallbackPayload.prompt, /Question 1 of 7/);
+      assert.match(fallbackPayload.prompt, /Question 1 of 10/);
       assert.match(fallbackPayload.prompt, /Ambiguity: 0\.86 \(high\)/);
 
       const sequential = spawnSync(
@@ -652,7 +665,7 @@ process.exit(0);
       assert.equal(sequentialPayload.status, 'prompting');
       assert.equal(sequentialPayload.current_index, 0);
       assert.equal(sequentialPayload.ambiguity.score, 0.86);
-      assert.match(sequentialPayload.prompt, /Question 1 of 7/);
+      assert.match(sequentialPayload.prompt, /Question 1 of 10/);
       assert.match(sequentialPayload.prompt, /Ambiguity: 0\.86 \(high\)/);
       assert.match(sequentialPayload.prompt, /\[single-answerable\] id=deliverableScope multi_select=false/);
 
@@ -680,7 +693,7 @@ process.exit(0);
       assert.equal(nextPayload.ok, false);
       assert.equal(nextPayload.current_index, 1);
       assert.equal(nextPayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
-      assert.match(nextPayload.prompt, /Question 2 of 7/);
+      assert.match(nextPayload.prompt, /Question 2 of 10/);
 
       const complexStart = spawnSync(
         process.execPath,
@@ -699,7 +712,7 @@ process.exit(0);
       assert.equal(complexStart.status, 0, complexStart.stderr || complexStart.stdout);
       const complexStartPayload = JSON.parse(complexStart.stdout) as { record_path: string };
       let complexOutput = '';
-      for (const answer of ['1C', '2A', '3B', '4C', '5B', '6A', '7A']) {
+      for (const answer of ['1C', '2A', '3B', '4C', '5B', '6A', '7A', '8A,B', '9A,B', '10A']) {
         const step = spawnSync(
           process.execPath,
           [
@@ -726,13 +739,13 @@ process.exit(0);
         answers: unknown[];
       };
       assert.equal(complexFollowup.ok, false);
-      assert.equal(complexFollowup.current_index, 7);
-      assert.equal(complexFollowup.progress, '8/8');
+      assert.equal(complexFollowup.current_index, 10);
+      assert.equal(complexFollowup.progress, '11/11');
       assert.equal(complexFollowup.question.id, 'edgeCases');
       assert.ok(complexFollowup.ambiguity.score > 0.35);
-      assert.equal(complexFollowup.answers.length, 7);
+      assert.equal(complexFollowup.answers.length, 10);
 
-      for (const answer of ['8A,B', '9A', '10A', '11A', '12A']) {
+      for (const answer of ['11A,B', '12A', '13A', '14A', '15A']) {
         const step = spawnSync(
           process.execPath,
           [
@@ -754,11 +767,13 @@ process.exit(0);
         ok: boolean;
         answers: unknown[];
         residual_ambiguity: { score: number; level: string; threshold: number };
+        quality_pruning: { complete: boolean };
       };
       assert.equal(complexComplete.ok, true);
-      assert.equal(complexComplete.answers.length, 12);
+      assert.equal(complexComplete.answers.length, 15);
       assert.ok(complexComplete.residual_ambiguity.score <= complexComplete.residual_ambiguity.threshold);
       assert.equal(complexComplete.residual_ambiguity.level, 'low');
+      assert.equal(complexComplete.quality_pruning.complete, true);
 
       const notifyStart = spawnSync(
         process.execPath,
@@ -788,7 +803,7 @@ process.exit(0);
         {
           cwd: root,
           encoding: 'utf-8',
-          input: ['1', '1', '1', '1', '1', '1', '1,2', ''].join('\n'),
+          input: ['1', '1', '1', '1', '1', '1', '1,2', '1,2', '1,2', '1', ''].join('\n'),
           env: {
             ...process.env,
             PATH: `${fakeBin}:${process.env.PATH || ''}`,
@@ -825,7 +840,7 @@ process.exit(0);
         {
           cwd: root,
           encoding: 'utf-8',
-          input: ['1', '1', '1', '1', '1', '1', '1,2', ''].join('\n'),
+          input: ['1', '1', '1', '1', '1', '1', '1,2', '1,2', '1,2', '1', ''].join('\n'),
           env: { ...process.env, TMUX: '', TMUX_PANE: '', OMG_DISABLE_CMUX_BRIDGE: '1' },
         },
       );
@@ -838,11 +853,16 @@ process.exit(0);
         record_path: string;
       };
       assert.equal(payload.ok, true);
-      assert.equal(payload.answers.length, 7);
+      assert.equal(payload.answers.length, 10);
       assert.equal(payload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
       assert.equal(payload.answers[6]?.question_id, 'nonGoals');
       assert.equal(payload.answers[6]?.answer.kind, 'multi');
       assert.deepEqual(payload.answers[6]?.answer.selected_values, ['no-backend-auth-persistence', 'no-new-dependencies']);
+      assert.equal(payload.answers[7]?.question_id, 'qualityFrontier');
+      assert.deepEqual(payload.answers[7]?.answer.selected_values, ['user-workflow-polish', 'reliability-edge-cases']);
+      assert.equal(payload.answers[8]?.question_id, 'qualityPruning');
+      assert.deepEqual(payload.answers[8]?.answer.selected_values, ['user-visible-value-first', 'verification-reliability-first']);
+      assert.equal(payload.answers[9]?.question_id, 'pruningRule');
       assert.match(payload.record_path, /\.omg\/runtime\/questions\/question-/);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -1156,6 +1176,7 @@ process.exit(0);
     assert.match(pressureSource, /commandImportTeam/);
     assert.match(pressureSource, /at least two evidence-backed trajectories/);
     assert.match(pressureSource, /critic, tester, or replanner pressure evidence/);
+    assert.match(pressureSource, /quality pruning evidence/);
 
     const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-pressure-'));
     try {
@@ -1203,6 +1224,12 @@ process.exit(0);
             externalVerification: [{ command: 'node test', status: 'pass', evidence: 'passed' }],
             adversarialReview: { status: 'clear', evidence: 'critic clear' },
             convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'compared' },
+            qualityPruning: {
+              status: 'passed',
+              frontierConsidered: 3,
+              finalistsKept: 1,
+              selectedStrategyEvidence: 'selected-strategy.md reviewed',
+            },
           }),
           '--json',
         ],
@@ -1388,6 +1415,13 @@ process.exit(0);
             externalVerification: [{ command: 'node test', status: 'pass', evidence: 'passed' }],
             adversarialReview: { status: 'clear', evidence: 'critic clear' },
             convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'baseline versus novelty' },
+            qualityPruning: {
+              status: 'passed',
+              frontierConsidered: 3,
+              finalistsKept: 2,
+              candidatesCut: ['speculative polish'],
+              selectedStrategyEvidence: 'selected-strategy.md maps keyboard-first quality focus to evidence',
+            },
           }),
           '--json',
         ],
@@ -1455,11 +1489,16 @@ process.exit(0);
       assert.match(result.stdout, /Which implementation scope should this target/i);
       assert.match(result.stdout, /Which stack should be used/i);
       assert.match(result.stdout, /What should happen after intake/i);
+      assert.match(result.stdout, /Which quality-improvement directions should be explored/i);
+      assert.match(result.stdout, /Which quality directions should survive pruning/i);
+      assert.match(result.stdout, /What rule should prune quality candidates/i);
       assert.match(result.stdout, /OMX question schema fallback/i);
       assert.match(result.stdout, /\[single-answerable\] id=deliverableScope multi_select=false/);
       assert.match(result.stdout, /\[multi-answerable\] id=nonGoals multi_select=true/);
-      assert.match(result.stdout, /1A 2A 3A 4A 5A 6A 7A/);
-      assert.doesNotMatch(result.stdout, /^8\./m);
+      assert.match(result.stdout, /\[multi-answerable\] id=qualityFrontier multi_select=true/);
+      assert.match(result.stdout, /\[multi-answerable\] id=qualityPruning multi_select=true/);
+      assert.match(result.stdout, /\[single-answerable\] id=pruningRule multi_select=false/);
+      assert.match(result.stdout, /1A 2A 3A 4A 5A 6A 7A 8A 9A 10A/);
       assert.match(result.stdout, /Reply with OMX selections/i);
       assert.doesNotMatch(result.stdout, /oh-my-goal harness:/);
     } finally {
@@ -1488,6 +1527,9 @@ process.exit(0);
             verification: 'inspect generated Markdown',
             workerLanes: 'architect researcher critic tester',
             localOptimum: 'baseline versus novelty plus critic',
+            qualityFrontier: 'decision clarity, execution readiness, risk mapping',
+            qualityPruning: 'verification and reliability first, simple maintainable core first',
+            pruningRule: 'best quality per implementation cost',
           }),
           '--json',
         ],
@@ -1502,11 +1544,17 @@ process.exit(0);
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/ambiguity-map.md'));
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/intake-questionnaire.md'));
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/execution-spec.md'));
+      assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/quality-frontier.md'));
+      assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/pruning-matrix.md'));
+      assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/selected-strategy.md'));
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/runtime-commands.md'));
 
       const harnessRoot = join(cwd, summary.root);
       const goalPrompt = readFileSync(join(harnessRoot, 'goal-prompt.md'), 'utf-8');
       const executionSpec = readFileSync(join(harnessRoot, 'execution-spec.md'), 'utf-8');
+      const qualityFrontier = readFileSync(join(harnessRoot, 'quality-frontier.md'), 'utf-8');
+      const pruningMatrix = readFileSync(join(harnessRoot, 'pruning-matrix.md'), 'utf-8');
+      const selectedStrategy = readFileSync(join(harnessRoot, 'selected-strategy.md'), 'utf-8');
       const ambiguityMap = readFileSync(join(harnessRoot, 'ambiguity-map.md'), 'utf-8');
       const questionnaire = readFileSync(join(harnessRoot, 'intake-questionnaire.md'), 'utf-8');
       const runtimeCommands = readFileSync(join(harnessRoot, 'runtime-commands.md'), 'utf-8');
@@ -1515,6 +1563,9 @@ process.exit(0);
       assert.match(goalPrompt, /Complete the user objective: ralpli PRD draft/);
       assert.doesNotMatch(goalPrompt, /Complete the user objective: \$oh-my-goal/);
       assert.match(goalPrompt, /runtime-commands\.md/);
+      assert.match(goalPrompt, /quality-frontier\.md/);
+      assert.match(goalPrompt, /pruning-matrix\.md/);
+      assert.match(goalPrompt, /selected-strategy\.md/);
       assert.match(goalPrompt, /Do not ask the user to run Team runtime manually/);
       assert.match(goalPrompt, /Pressure init command: node '.+pressure-runtime\.mjs' init/);
       assert.match(goalPrompt, /Pressure gate command before completion: node '.+pressure-runtime\.mjs' gate/);
@@ -1523,8 +1574,16 @@ process.exit(0);
       assert.match(executionSpec, /# Execution Spec/);
       assert.match(executionSpec, /## Verification Plan/);
       assert.match(executionSpec, /## Agent Work Breakdown/);
+      assert.match(executionSpec, /Quality frontier:/);
+      assert.match(qualityFrontier, /# Quality Frontier/);
+      assert.match(qualityFrontier, /Candidate Quality Lenses/);
+      assert.match(pruningMatrix, /# Pruning Matrix/);
+      assert.match(pruningMatrix, /Keep \/ Cut/);
+      assert.match(selectedStrategy, /# Selected Strategy/);
+      assert.match(selectedStrategy, /Rejected Or Deferred Quality Candidates/);
       assert.match(ambiguityMap, /OMX deep-interview pattern/i);
       assert.match(questionnaire, /Batch independent high-leverage questions/i);
+      assert.match(questionnaire, /qualityFrontier/);
       assert.match(questionnaire, /Gap-fill contract/i);
       assert.match(runtimeCommands, /Team Runtime Auto-Start/);
       assert.match(runtimeCommands, /Pressure Runtime Auto-Start/);

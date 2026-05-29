@@ -22,7 +22,7 @@ $oh-my-goal ralpli PRD 작성하고 싶어
 
 Text after `$oh-my-goal` is treated as the objective. The first response is intentionally a questionnaire: the plugin should not create harness files, write implementation files, or start coding until you answer the intake questions or explicitly say to use defaults.
 
-After intake, the skill resolves ambiguity and writes:
+After intake, the skill resolves ambiguity, runs a quality-frontier/pruning stage, and writes:
 
 The skill is split into a small router plus flow files:
 
@@ -51,7 +51,7 @@ node plugins/oh-my-goal/scripts/intake-question-engine.mjs \
   --format payload
 ```
 
-That payload uses the canonical `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values` schema from `omx question`.
+That payload uses the canonical `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values` schema from `omx question`. It has two stages: reduce ambiguity first, then expand and prune quality-improvement candidates so the goal does not converge on the first plausible path.
 
 For an interactive intake UI, use the optional runtime:
 
@@ -93,6 +93,10 @@ It writes `.omg/runtime/pressure/<slug>/` state, forces evidence-backed baseline
   ambiguity-map.md
   intake-questionnaire.md
   deep-interview.md
+  execution-spec.md
+  quality-frontier.md
+  pruning-matrix.md
+  selected-strategy.md
   goal-prompt.md
   harness.md
   runtime-commands.md
@@ -128,13 +132,14 @@ codex plugin add oh-my-goal@oh-my-goal-local
 - Refines a raw request into a single Codex goal prompt.
 - Parses `$oh-my-goal <objective>` directly without re-asking for the objective.
 - Runs OMX-style structured deep-interview intake when scope or acceptance criteria are unclear.
+- Runs quality frontier expansion and pruning before path selection.
 - Writes Markdown harness files under `.omg/harness/<slug>/`.
 - Sets up leader, architect, implementer, tester, critic, and replanner lane instructions.
 - Provides an optional Team runtime bridge with OMX-derived worker state plus visible cmux/tmux worker panes.
 - Provides a pressure runtime that enforces trajectory comparison, critic pressure, perturbation, and completion gating.
 - Treats execution as trajectory search instead of premature convergence.
 - Uses optional Codex subagent/worker lanes for research, implementation, testing, critique, or replanning evidence.
-- Requires objective audit, implementation evidence, external verification, adversarial review, and basin-escape convergence checks before completion.
+- Requires objective audit, implementation evidence, external verification, quality pruning evidence, adversarial review, and basin-escape convergence checks before completion.
 
 Codex goal ownership remains with the leader session. Workers must not call `create_goal` or `update_goal`; they return evidence, diffs, blockers, risks, test output, and candidate trajectory scores.
 

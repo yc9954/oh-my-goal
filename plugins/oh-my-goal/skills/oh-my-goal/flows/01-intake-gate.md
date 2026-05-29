@@ -26,6 +26,18 @@ Build a private ambiguity map before asking. Cover:
 
 Do not show a long analysis dump. Ask only the independent high-leverage questions that would materially change the harness.
 
+## Quality Frontier And Pruning
+
+After ambiguity-reduction questions, the intake must also run a quality-pruning stage. This stage is not the same as acceptance testing. It asks what "better" could mean for this objective, then prunes that wider search space before worker lanes start.
+
+Cover at least:
+
+- `qualityFrontier`: candidate quality lenses such as user workflow, reliability, maintainability, verification depth, extensibility, stakeholder clarity, or risk reduction.
+- `qualityPruning`: which quality directions should survive into the execution strategy.
+- `pruningRule`: the rule for cutting low-leverage, speculative, or scope-expanding improvements.
+
+The runtime may ask these as baseline questions or append them as follow-ups after ambiguity falls below threshold. `ok: true` requires both low residual ambiguity and completed quality pruning.
+
 ## Structured Intake
 
 Path rule: `<plugin-root>` is two directories above this skill directory. Use `<plugin-root>/scripts/intake-question-engine.mjs`, not `skills/oh-my-goal/scripts/intake-question-engine.mjs`.
@@ -66,7 +78,7 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
   --json
 ```
 
-If status returns `ok: true`, use those `answers[]` directly and continue to gap-fill. `ok: true` means the runtime has either driven residual ambiguity below threshold or reached an explicit user-approved stopping condition.
+If status returns `ok: true`, use those `answers[]` directly and continue to gap-fill. `ok: true` means the runtime has driven residual ambiguity below threshold and completed quality pruning, or reached an explicit user-approved stopping condition.
 
 When no interactive renderer can be opened, `auto` returns the sequential fallback with the current ambiguity score. Ask only `prompt` from the JSON result, then stop. Keep `record_path` in context. When the user answers, continue with:
 
@@ -78,7 +90,7 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
   --json
 ```
 
-If the result is still `status: "prompting"`, ask the next `prompt` and stop again. The prompt may be question 8+ because the runtime appends follow-up questions when the baseline answers leave residual ambiguity above threshold. If the result has `ok: true`, use its `answers[]` and `residual_ambiguity` as the approved intake record.
+If the result is still `status: "prompting"`, ask the next `prompt` and stop again. The prompt may be question 8+ because the runtime appends follow-up questions when the baseline answers leave residual ambiguity above threshold or the quality-pruning stage is incomplete. If the result has `ok: true`, use its `answers[]`, `residual_ambiguity`, and `quality_pruning` as the approved intake record.
 Do not fall back to a batched questionnaire unless the user explicitly asks for all questions at once. The Markdown schema block is only a last-resort diagnostic fallback.
 
 For PRD/spec/planning requests, ask about:
@@ -98,5 +110,6 @@ After the user answers:
 
 1. Assimilate answers into scope, non-goals, acceptance, verification, and handoff target.
 2. Rescan repo context, prior turns, and conservative defaults for residual critical gaps.
+3. Expand the quality frontier, then prune candidates into a small execution strategy before harness generation.
 
 Ask another round only for surviving critical ambiguity. The runtime should keep adding focused follow-up questions until `residual_ambiguity.score` is below threshold, rather than stopping just because the baseline questionnaire ended.

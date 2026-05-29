@@ -18,7 +18,7 @@ questions[]:
    C) label="Full-featured implementation" value="full-featured"
    D) other_label="Other" value="<free text>"
 
-Reply with OMX selections, for example: 1A 2A 3A 4A 5A 6A 7A; multi-select example: 7A,B.
+Reply with OMX selections, for example: 1A 2A 3A 4A 5A 6A 7A 8A,B 9A 10A; multi-select example: 7A,B.
 ```
 
 For PRD/spec/planning requests, use the same schema-rendered shape with planning question IDs:

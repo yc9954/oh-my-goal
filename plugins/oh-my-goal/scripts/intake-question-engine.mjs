@@ -125,6 +125,65 @@ function option(label, value, description) {
   return { label, value, ...(description ? { description } : {}) };
 }
 
+function qualityQuestions(kind) {
+  const planning = kind === 'planning';
+  const implementation = kind === 'implementation';
+  const frontierOptions = planning
+    ? [
+        option('Decision clarity', 'decision-clarity', 'Make the artifact help a concrete product or build decision.'),
+        option('Execution readiness', 'execution-readiness', 'Make the artifact directly usable by builders or Codex goal execution.'),
+        option('Risk and dependency mapping', 'risk-dependency-mapping', 'Surface blockers, unknowns, and sequencing risks early.'),
+        option('Stakeholder alignment', 'stakeholder-alignment', 'Make tradeoffs and non-goals easy to review.'),
+      ]
+    : implementation
+      ? [
+          option('User workflow polish', 'user-workflow-polish', 'Improve the actual task flow, layout, and interaction feel.'),
+          option('Reliability and edge cases', 'reliability-edge-cases', 'Handle invalid input, error states, and failure paths.'),
+          option('Maintainable simple structure', 'maintainable-simple-structure', 'Keep code easy to change without over-abstracting.'),
+          option('Verification depth', 'verification-depth', 'Add checks that catch false completion, not only happy-path output.'),
+          option('Extensibility without scope creep', 'extensibility-without-scope-creep', 'Leave clear extension points without adding unrelated features.'),
+        ]
+      : [
+          option('Outcome quality', 'outcome-quality', 'Improve the usefulness of the final artifact or implementation.'),
+          option('Risk reduction', 'risk-reduction', 'Reduce hidden assumptions, blockers, and false completion.'),
+          option('Maintainability', 'maintainability', 'Prefer a result that remains easy to inspect and evolve.'),
+          option('Verification strength', 'verification-strength', 'Prefer evidence that can disprove weak paths.'),
+        ];
+
+  return [
+    {
+      id: 'qualityFrontier',
+      question: 'Which quality-improvement directions should be explored before choosing a path?',
+      type: 'multi-answerable',
+      allow_other: true,
+      options: frontierOptions,
+    },
+    {
+      id: 'qualityPruning',
+      question: 'Which quality directions should survive pruning into the execution strategy?',
+      type: 'multi-answerable',
+      allow_other: true,
+      options: [
+        option('User-visible value first', 'user-visible-value-first', 'Keep improvements that noticeably improve the user outcome.'),
+        option('Verification and reliability first', 'verification-reliability-first', 'Keep improvements that reduce false completion risk.'),
+        option('Simple maintainable core first', 'simple-maintainable-core-first', 'Keep improvements that improve quality without bloating scope.'),
+        option('Novel alternative lane', 'novel-alternative-lane', 'Keep one structurally different path for comparison.'),
+      ],
+    },
+    {
+      id: 'pruningRule',
+      question: 'What rule should prune quality candidates?',
+      type: 'single-answerable',
+      allow_other: true,
+      options: [
+        option('Maximize useful quality within current scope', 'maximize-quality-within-scope', 'Improve quality without expanding the goal.'),
+        option('Minimize false-completion risk', 'minimize-false-completion-risk', 'Prefer candidates that create stronger evidence.'),
+        option('Best quality per implementation cost', 'best-quality-per-cost', 'Prefer high leverage improvements and reject expensive polish.'),
+      ],
+    },
+  ];
+}
+
 function planningQuestions() {
   return [
     {
@@ -193,6 +252,7 @@ function planningQuestions() {
         option('Implementation after approval', 'implementation-after-approval', 'Prepare for coding after you approve the plan.'),
       ],
     },
+    ...qualityQuestions('planning'),
   ];
 }
 
@@ -275,6 +335,7 @@ function implementationQuestions() {
         option('No styling beyond functional layout', 'no-extra-styling', 'Keep visuals basic.'),
       ],
     },
+    ...qualityQuestions('implementation'),
   ];
 }
 
@@ -335,6 +396,7 @@ function genericQuestions() {
         option('Skip local-optimum pressure', 'skip-local-optimum-pressure', 'Only when the task is trivial.'),
       ],
     },
+    ...qualityQuestions('generic'),
   ];
 }
 

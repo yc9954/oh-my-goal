@@ -21,7 +21,8 @@ import {
 const DEFAULT_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
 const POLL_INTERVAL_MS = 100;
 const RESIDUAL_AMBIGUITY_THRESHOLD = 0.35;
-const MAX_QUESTIONS = 12;
+const MAX_QUESTIONS = 16;
+const QUALITY_QUESTION_IDS = ['qualityFrontier', 'qualityPruning', 'pruningRule'];
 const AMBIGUITY_BY_ID = {
   deliverableScope: [0.86, 'high', 'Scope changes artifacts, implementation shape, and completion evidence.'],
   acceptance: [0.9, 'high', 'Acceptance determines whether the goal can be completed safely.'],
@@ -43,6 +44,9 @@ const AMBIGUITY_BY_ID = {
   dataPersistence: [0.48, 'medium', 'State persistence changes implementation and tests.'],
   prdDecision: [0.5, 'medium', 'PRD depth depends on the decision it must support.'],
   releaseHorizon: [0.44, 'medium', 'Planning horizon changes scope and specificity.'],
+  qualityFrontier: [0.76, 'medium-high', 'Quality frontier opens competing improvement paths before premature convergence.'],
+  qualityPruning: [0.72, 'medium-high', 'Pruning decides which quality paths are worth spending tokens and worker lanes on.'],
+  pruningRule: [0.68, 'medium', 'The pruning rule prevents quality work from becoming vague polish or scope creep.'],
 };
 
 function safeString(value) {
@@ -535,6 +539,26 @@ function questionCount(record) {
   return recordQuestions(record).length;
 }
 
+function hasAnswered(answers, questionId) {
+  const values = answerValuesMap(answers);
+  return values.has(questionId) && (values.get(questionId) || []).length > 0;
+}
+
+function qualityPruningStatus(record, answers) {
+  const questions = recordQuestions(record);
+  const present = new Set(questions.map((question) => question.id));
+  const missingQuestions = QUALITY_QUESTION_IDS.filter((id) => !present.has(id));
+  const missingAnswers = QUALITY_QUESTION_IDS.filter((id) => present.has(id) && !hasAnswered(answers, id));
+  const complete = missingQuestions.length === 0 && missingAnswers.length === 0;
+  return {
+    complete,
+    stage: complete ? 'complete' : 'pending',
+    missing_questions: missingQuestions,
+    missing_answers: missingAnswers,
+    required: QUALITY_QUESTION_IDS,
+  };
+}
+
 function isImplementationRecord(record) {
   const ids = new Set(recordQuestions(record).map((question) => question.id));
   return ids.has('stack') || ids.has('ux') || ids.has('outputMode');
@@ -683,6 +707,61 @@ function implementationFollowup(record, answers, residual) {
   return null;
 }
 
+function qualityFollowup(record, answers) {
+  if (questionCount(record) >= MAX_QUESTIONS) return null;
+  const status = qualityPruningStatus(record, answers);
+  if (status.complete) return null;
+  const missingId = status.missing_questions[0];
+  if (missingId === 'qualityFrontier') {
+    return {
+      id: 'qualityFrontier',
+      question: 'Which quality-improvement directions should be explored before choosing a path?',
+      type: 'multi-answerable',
+      multi_select: true,
+      allow_other: true,
+      other_label: 'Other quality direction',
+      options: [
+        option('User workflow polish', 'user-workflow-polish', 'Improve actual task flow, layout, and interaction feel.'),
+        option('Reliability and edge cases', 'reliability-edge-cases', 'Catch false completion beyond happy-path behavior.'),
+        option('Maintainable simple structure', 'maintainable-simple-structure', 'Improve quality without creating architecture bloat.'),
+        option('Verification depth', 'verification-depth', 'Design probes that can falsify weak solutions.'),
+      ],
+    };
+  }
+  if (missingId === 'qualityPruning') {
+    return {
+      id: 'qualityPruning',
+      question: 'Which quality directions should survive pruning into the execution strategy?',
+      type: 'multi-answerable',
+      multi_select: true,
+      allow_other: true,
+      other_label: 'Other surviving direction',
+      options: [
+        option('User-visible value first', 'user-visible-value-first', 'Keep improvements that noticeably improve the user outcome.'),
+        option('Verification and reliability first', 'verification-reliability-first', 'Keep improvements that reduce false completion risk.'),
+        option('Simple maintainable core first', 'simple-maintainable-core-first', 'Keep improvements that improve quality without bloating scope.'),
+        option('Novel alternative lane', 'novel-alternative-lane', 'Keep one structurally different path for comparison.'),
+      ],
+    };
+  }
+  if (missingId === 'pruningRule') {
+    return {
+      id: 'pruningRule',
+      question: 'What rule should prune quality candidates?',
+      type: 'single-answerable',
+      multi_select: false,
+      allow_other: true,
+      other_label: 'Other pruning rule',
+      options: [
+        option('Maximize useful quality within current scope', 'maximize-quality-within-scope', 'Improve quality without expanding the goal.'),
+        option('Minimize false-completion risk', 'minimize-false-completion-risk', 'Prefer candidates that create stronger evidence.'),
+        option('Best quality per implementation cost', 'best-quality-per-cost', 'Prefer high leverage improvements and reject expensive polish.'),
+      ],
+    };
+  }
+  return null;
+}
+
 function planningFollowup(record, answers, residual) {
   if (residual.score <= RESIDUAL_AMBIGUITY_THRESHOLD) return null;
   if (questionCount(record) >= MAX_QUESTIONS) return null;
@@ -743,10 +822,15 @@ function genericFollowup(record, answers, residual) {
 function nextFollowupQuestion(record, answers) {
   const residual = residualAmbiguity(record, answers);
   let question = null;
+  let phase = 'ambiguity';
   if (isImplementationRecord(record)) question = implementationFollowup(record, answers, residual);
   else if (isPlanningRecord(record)) question = planningFollowup(record, answers, residual);
   else question = genericFollowup(record, answers, residual);
-  return { residual, question };
+  if (!question && residual.score <= RESIDUAL_AMBIGUITY_THRESHOLD) {
+    question = qualityFollowup(record, answers);
+    if (question) phase = 'quality-pruning';
+  }
+  return { residual, question, quality: qualityPruningStatus(record, answers), phase };
 }
 
 function mergeAnswerEntries(existing, incoming) {
@@ -788,7 +872,7 @@ async function promptForPendingAnswersWithArrows(record, existingAnswers) {
 }
 
 async function finalizeOrExtendRecord(statePath, record, answers) {
-  const { residual, question } = nextFollowupQuestion(record, answers);
+  const { residual, question, quality, phase } = nextFollowupQuestion(record, answers);
   const now = new Date().toISOString();
   if (question) {
     const questions = [...recordQuestions(record), question];
@@ -800,6 +884,8 @@ async function finalizeOrExtendRecord(statePath, record, answers) {
       questions,
       answers,
       residual_ambiguity: residual,
+      quality_pruning: quality,
+      followup_phase: phase,
       followup_required: true,
     };
     await writeJsonAtomic(statePath, extended);
@@ -813,6 +899,8 @@ async function finalizeOrExtendRecord(statePath, record, answers) {
     answers,
     answer: answers[0]?.answer,
     residual_ambiguity: residual,
+    quality_pruning: qualityPruningStatus(record, answers),
+    followup_phase: 'complete',
     followup_required: false,
   };
   await writeJsonAtomic(statePath, answered);
@@ -892,6 +980,9 @@ function sequentialPromptPayload(record) {
     ambiguity: ambiguityForQuestion(question, index),
     question,
     answers: record.answers || [],
+    residual_ambiguity: record.residual_ambiguity,
+    quality_pruning: record.quality_pruning,
+    followup_phase: record.followup_phase,
     prompt: renderSequentialPrompt(record),
   };
 }
@@ -1059,6 +1150,7 @@ function successPayload(record) {
     record_path: record.record_path,
     renderer: record.renderer,
     residual_ambiguity: record.residual_ambiguity,
+    quality_pruning: record.quality_pruning,
   };
 }
 

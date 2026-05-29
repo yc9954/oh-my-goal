@@ -13,7 +13,7 @@ This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launch
 
 1. Read `FLOW.md` before taking any action.
 2. The first `$oh-my-goal <objective>` response is an intake turn, not an execution turn.
-3. After repo/context preflight, ask structured intake questions until residual ambiguity is low enough, then stop.
+3. After repo/context preflight, ask structured intake questions until residual ambiguity is low enough and the quality-pruning stage is complete, then stop.
 4. Do not create harness files, run the artifact generator, write implementation files, call `create_goal`, or start coding until the user answers the intake questions.
 5. Skip the interview gate only when the user explicitly says to use defaults, skip questions, or proceed without interview.
 
@@ -28,7 +28,7 @@ This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launch
 
 Resolve `<plugin-root>` as the directory two levels above this skill directory. From `skills/oh-my-goal/SKILL.md`, the scripts live at `../../scripts/*.mjs`. Do not look for scripts under `skills/oh-my-goal/scripts/`.
 
-Build intake with `scripts/intake-question-engine.mjs`, which ports OMX `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values`. `scripts/omx-question-core.mjs` ports OMX `src/question/ui.ts`. `scripts/intake-question-runtime.mjs` adds transport and ambiguity follow-up: start with `--mode auto`; cmux/tmux/macOS can open selector panes, and other surfaces return sequential fallback with an ambiguity score. If auto returns `status: "prompting"`, stop and later read it with `--mode status --state-path <record_path>`. Continue fallback answers with `--mode sequential-answer --state-path <record_path> --answer <selection> --json` until `ok: true`.
+Build intake with `scripts/intake-question-engine.mjs`, which ports OMX `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values`. The schema has two stages: ambiguity reduction first, then quality frontier/pruning so Codex explores improvement directions before committing to a path. `scripts/omx-question-core.mjs` ports OMX `src/question/ui.ts`. `scripts/intake-question-runtime.mjs` adds transport, ambiguity follow-up, and quality-pruning follow-up: start with `--mode auto`; cmux/tmux/macOS can open selector panes, and other surfaces return sequential fallback with an ambiguity score. If auto returns `status: "prompting"`, stop and later read it with `--mode status --state-path <record_path>`. Continue fallback answers with `--mode sequential-answer --state-path <record_path> --answer <selection> --json` until `ok: true`.
 
 When independent worker lanes help, use `scripts/team-runtime.mjs`. `scripts/omx-team-core.mjs` owns OMX-derived Team state: tasks, worker identity, `schema_version: 2` manifest, packets, status, collection, and shutdown. `team-runtime.mjs` is only cmux/tmux transport. Workers must not own the Codex goal.
 

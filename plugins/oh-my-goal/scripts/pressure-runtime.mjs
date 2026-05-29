@@ -819,6 +819,17 @@ function evaluateCompletionEvidence(evidence) {
   } else if (convergence.status !== 'passed') {
     blockers.push(`basin-escape convergence challenge is ${convergence.status}`);
   }
+  const quality = evidence?.qualityPruning;
+  if (
+    quality?.status !== 'passed'
+    || !Number.isFinite(quality?.frontierConsidered)
+    || quality.frontierConsidered < 3
+    || !Number.isFinite(quality?.finalistsKept)
+    || quality.finalistsKept < 1
+    || !hasText(quality?.selectedStrategyEvidence)
+  ) {
+    missing.push('quality pruning evidence with at least three candidates considered and one finalist kept');
+  }
   return { missing, blockers };
 }
 
