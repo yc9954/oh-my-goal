@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
+import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { GoalWorkflowRun } from '../goal-workflows/artifacts.js';
+import { GOAL_HARNESS_WORKFLOW, startGoalHarnessRun } from '../goal-harness/artifacts.js';
 import { GOAL_HARNESS_HELP, goalHarnessCommand } from './goal-harness.js';
 import { main as omxMain } from './index.js';
 
@@ -86,12 +89,101 @@ function translateHelp(command: string): string {
     : command;
 }
 
+function displayOmgText(text: string): string {
+  return text.replaceAll('omx goal-harness', 'omg');
+}
+
 export function shouldDelegateOmgToOmx(args: readonly string[]): boolean {
   const command = translateHelp(args[0] ?? 'help');
   if (command === 'help' || command === 'version' || command === '--version' || command === '-v') return false;
   if (command === 'status') return !args.includes('--slug');
   if (command.startsWith('-')) return true;
   return !GOAL_HARNESS_COMMANDS.has(command);
+}
+
+const CODEX_VALUE_FLAGS = new Set([
+  '-c',
+  '--config',
+  '-m',
+  '--model',
+  '--model-provider',
+  '--profile',
+  '--cd',
+  '--cwd',
+  '-C',
+  '--sandbox',
+  '--ask-for-approval',
+  '--approval-policy',
+  '--config-profile',
+  '--color',
+  '--search',
+  '--worktree',
+  '-w',
+  '--custom',
+]);
+
+function isLaunchLikeOmgInvocation(args: readonly string[]): boolean {
+  const command = translateHelp(args[0] ?? 'help');
+  return command.startsWith('-') || command === 'launch';
+}
+
+function hasExplicitLaunchPrompt(args: readonly string[]): boolean {
+  const launchArgs = args[0] === 'launch' ? args.slice(1) : args;
+  let passthrough = false;
+  for (let index = 0; index < launchArgs.length; index += 1) {
+    const arg = launchArgs[index] ?? '';
+    if (passthrough) return true;
+    if (arg === '--') {
+      passthrough = true;
+      continue;
+    }
+    if (CODEX_VALUE_FLAGS.has(arg)) {
+      index += 1;
+      continue;
+    }
+    if (arg.startsWith('-')) continue;
+    return true;
+  }
+  return false;
+}
+
+async function readRun(path: string): Promise<GoalWorkflowRun | undefined> {
+  try {
+    const parsed = JSON.parse(await readFile(path, 'utf-8')) as GoalWorkflowRun;
+    return parsed.version === 1 && parsed.workflow === GOAL_HARNESS_WORKFLOW && parsed.slug
+      ? parsed
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function findLatestLaunchableGoalHarnessRun(cwd: string): Promise<GoalWorkflowRun | undefined> {
+  const root = join(cwd, '.omx', 'goals', GOAL_HARNESS_WORKFLOW);
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return undefined;
+  }
+  const runs = (await Promise.all(entries.map((entry) => readRun(join(root, entry, 'status.json')))))
+    .filter((run): run is GoalWorkflowRun => Boolean(run))
+    .filter((run) => run.status === 'pending' || run.status === 'in_progress' || run.status === 'validation_passed');
+  runs.sort((a, b) => Date.parse(b.updatedAt || b.createdAt) - Date.parse(a.updatedAt || a.createdAt));
+  return runs[0];
+}
+
+export async function resolveOmgLaunchArgs(args: string[], cwd = process.cwd()): Promise<{ args: string[]; slug?: string }> {
+  if (!isLaunchLikeOmgInvocation(args) || hasExplicitLaunchPrompt(args)) return { args };
+  const run = await findLatestLaunchableGoalHarnessRun(cwd);
+  if (!run) return { args };
+  const handoff = await startGoalHarnessRun(cwd, run.slug);
+  const prompt = [
+    'Use the existing OMG goal-harness run for this Codex session.',
+    '',
+    displayOmgText(handoff.instruction),
+  ].join('\n');
+  return { args: [...args, prompt], slug: handoff.run.slug };
 }
 
 export async function main(args: string[]): Promise<void> {
@@ -109,7 +201,9 @@ export async function main(args: string[]): Promise<void> {
     return;
   }
   if (shouldDelegateOmgToOmx(args)) {
-    await omxMain(args);
+    const launch = await resolveOmgLaunchArgs(args);
+    if (launch.slug) console.error(`[omg] launching with goal harness: ${launch.slug}`);
+    await omxMain(launch.args);
     return;
   }
 

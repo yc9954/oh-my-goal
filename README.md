@@ -51,6 +51,7 @@ node dist/cli/omg.js start "Ship this safely"
 - Treats execution as trajectory search instead of premature convergence.
 - Uses optional Team worker lanes for research, implementation, testing, critique, or replanning evidence.
 - Requires objective audit, implementation evidence, external verification, adversarial review, and basin-escape convergence checks before completion.
+- Launches Codex with the latest active OMG handoff when you run `omg --madmax --high` after `omg start`.
 
 ## Core Flow
 

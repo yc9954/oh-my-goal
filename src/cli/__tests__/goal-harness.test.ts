@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { GOAL_HARNESS_HELP, goalHarnessCommand } from '../goal-harness.js';
 import { HELP } from '../index.js';
-import { OMG_HELP, main as goalProductMain, shouldDelegateOmgToOmx } from '../omg-main.js';
+import { OMG_HELP, main as goalProductMain, resolveOmgLaunchArgs, shouldDelegateOmgToOmx } from '../omg-main.js';
 
 async function withCwd<T>(run: (cwd: string) => Promise<T>): Promise<T> {
   const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-cli-'));
@@ -126,6 +126,29 @@ describe('cli/goal-harness', () => {
       assert.match(intake, /Goal Harness Deep Interview/);
       assert.match(plan, /Goal Harness Ralplan/);
       assert.equal(status.status, 'in_progress');
+    });
+  });
+
+  it('injects the latest omg goal handoff into launch-style invocations', async () => {
+    await withCwd(async (cwd) => {
+      await capture(() => goalProductMain([
+        'start',
+        'Build a launch path that automatically resumes the latest goal harness.',
+        '--slug',
+        'launch-handoff',
+      ]));
+
+      const launch = await resolveOmgLaunchArgs(['--madmax', '--high'], cwd);
+      assert.equal(launch.slug, 'launch-handoff');
+      assert.deepEqual(launch.args.slice(0, 2), ['--madmax', '--high']);
+      const prompt = launch.args.at(-1) ?? '';
+      assert.match(prompt, /Use the existing OMG goal-harness run/);
+      assert.match(prompt, /create_goal payload:/);
+      assert.match(prompt, /omg gate --slug launch-handoff/);
+      assert.doesNotMatch(prompt, /omx goal-harness gate --slug launch-handoff/);
+
+      const explicit = await resolveOmgLaunchArgs(['--madmax', '--high', 'Do plain Codex work'], cwd);
+      assert.deepEqual(explicit, { args: ['--madmax', '--high', 'Do plain Codex work'] });
     });
   });
 
