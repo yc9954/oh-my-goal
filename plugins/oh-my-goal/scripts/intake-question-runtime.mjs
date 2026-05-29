@@ -524,6 +524,7 @@ function applyQuestionWizardKey(record, state, key) {
   const current = questions[state.currentQuestionIndex];
   const currentSelection = state.selections[state.currentQuestionIndex];
   if (key.name === 'right') {
+    if (!isMultiAnswerableQuestion(current)) return { submit: false, state };
     if (questionNeedsOtherTextNow(current, currentSelection, state.otherTexts[state.currentQuestionIndex])) {
       return { submit: false, state, needsOtherText: state.currentQuestionIndex };
     }
@@ -576,12 +577,12 @@ function renderQuestionWizardFrame(record, state) {
   lines.push(question.question);
   optionEntries.forEach((entry, index) => {
     const isActive = selection.cursorIndex === index;
-    const isChecked = isMultiAnswerableQuestion(question) ? selection.selectedIndices.includes(index) : isActive;
+    const isChecked = isMultiAnswerableQuestion(question) ? selection.selectedIndices.includes(index) : false;
     const cursor = isActive ? '›' : ' ';
     const box = `[${isChecked ? 'x' : ' '}]`;
     lines.push(entry.description ? `${cursor} ${box} ${entry.label} - ${entry.description}` : `${cursor} ${box} ${entry.label}`);
   });
-  lines.push(isMultiAnswerableQuestion(question) ? '↑↓ move · Space toggle · Enter/→ next · ← back' : '↑↓ move · Enter/→ next · ← back');
+  lines.push(isMultiAnswerableQuestion(question) ? '↑↓ move · Space toggle · Enter/→ next · ← back' : '↑↓ move · Enter select · ← back');
   if (selection.error || state.error) lines.push(selection.error || state.error || '');
   return `${lines.join('\n')}\n`;
 }
