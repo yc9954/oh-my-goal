@@ -35,6 +35,7 @@ describe('oh-my-goal plugin contract', () => {
       'flows/02-artifact-generation.md',
       'flows/03-goal-handoff.md',
       'flows/04-orchestration.md',
+      'templates/first-turn-response.md',
       'templates/intake-fallback.md',
       'templates/worker-packet.md',
       'references/omx-patterns.md',
@@ -48,6 +49,7 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(topFlow, /Phase Router/i);
     assert.match(topFlow, /INTAKE_PENDING/);
     assert.match(topFlow, /create files, run generator, code, create goal/i);
+    assert.match(topFlow, /templates\/first-turn-response\.md/);
 
     const flow = readSkillRelative('flows/00-entrypoint.md');
     assert.match(flow, /State Machine/i);
@@ -65,6 +67,10 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(orchestration, /Momus/i);
     assert.match(orchestration, /Oracle/i);
     assert.match(orchestration, /Local-Optimum Pressure/i);
+
+    const firstTurnTemplate = readSkillRelative('templates/first-turn-response.md');
+    assert.match(firstTurnTemplate, /Stop immediately/i);
+    assert.match(firstTurnTemplate, /Do not add a plan/i);
   });
 
   it('requires an explicit completed interview before accepting supplied answers', () => {
@@ -103,6 +109,11 @@ describe('oh-my-goal plugin contract', () => {
 
       assert.equal(result.status, 0, result.stderr || result.stdout);
       assert.match(result.stdout, /Before I create harness files/i);
+      assert.match(result.stdout, /Which implementation scope should this target/i);
+      assert.match(result.stdout, /Which stack should be used/i);
+      assert.match(result.stdout, /What should happen after intake/i);
+      assert.match(result.stdout, /1A 2A 3A 4A 5A 6A 7A/);
+      assert.doesNotMatch(result.stdout, /^8\./m);
       assert.match(result.stdout, /Reply with choices/i);
       assert.doesNotMatch(result.stdout, /oh-my-goal harness:/);
     } finally {

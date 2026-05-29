@@ -35,6 +35,7 @@ plugins/oh-my-goal/skills/oh-my-goal/
   flows/02-artifact-generation.md
   flows/03-goal-handoff.md
   flows/04-orchestration.md
+  templates/first-turn-response.md
   templates/intake-fallback.md
   templates/worker-packet.md
   references/omx-patterns.md

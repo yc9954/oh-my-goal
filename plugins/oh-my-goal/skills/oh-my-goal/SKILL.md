@@ -25,6 +25,7 @@ This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launch
 - `flows/02-artifact-generation.md` - generator usage and required harness files.
 - `flows/03-goal-handoff.md` - recommended `create_goal` prompt rules.
 - `flows/04-orchestration.md` - leader, workers, Team-style packets, and local-optimum pressure.
+- `templates/first-turn-response.md` - required output shape for the first intake turn.
 - `templates/intake-fallback.md` - numbered prose fallback questions when structured input is unavailable.
 - `templates/worker-packet.md` - worker lane packet template.
 - `references/omx-patterns.md` - OMX-derived design patterns to preserve.

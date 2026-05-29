@@ -22,7 +22,7 @@ Route every turn through exactly one phase:
 
 ## First-Turn Rule
 
-For `INTAKE_PENDING`, do not create files, run the generator, call `create_goal`, or implement code. You may inspect focused repo context first. Then ask one structured intake block and wait for the user's next turn.
+For `INTAKE_PENDING`, do not create files, run the generator, call `create_goal`, or implement code. You may inspect focused repo context first. Then use `templates/first-turn-response.md` to ask one structured intake block and wait for the user's next turn.
 
 Read next:
 
