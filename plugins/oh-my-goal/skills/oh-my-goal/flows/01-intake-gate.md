@@ -44,7 +44,16 @@ The payload must use canonical OMX question fields:
 - `allow_other` only when one user-supplied option is genuinely useful,
 - `answers[]` and `answers[i].answer.selected_values` as the source of truth after the answer.
 
-If attached-tmux OMX rendering is available, pass the payload to `omx question --input '<json>' --json`. Outside tmux, use native structured input when available. When structured input is unavailable, render the same payload with `--format markdown`, use `templates/intake-fallback.md` as the output shape, and wait for one user reply.
+For a visible blocking UI, prefer the bundled runtime:
+
+```sh
+node <plugin-root>/scripts/intake-question-runtime.mjs \
+  --objective "<objective>" \
+  --mode auto \
+  --json
+```
+
+In attached tmux, it opens a separate question pane and returns structured answers. Outside tmux, use native structured input when available. When structured input is unavailable, render the same payload with `--format markdown`, use `templates/intake-fallback.md` as the output shape, and wait for one user reply.
 
 For PRD/spec/planning requests, ask about:
 

@@ -10,6 +10,7 @@ const skillRoot = join(root, 'plugins', 'oh-my-goal', 'skills', 'oh-my-goal');
 const skillPath = join(skillRoot, 'SKILL.md');
 const generatorPath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'create-harness.mjs');
 const questionEnginePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-engine.mjs');
+const questionRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-runtime.mjs');
 
 function readSkillRelative(path: string): string {
   return readFileSync(join(skillRoot, path), 'utf-8');
@@ -25,6 +26,7 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(skill, /flows\/00-entrypoint\.md/);
     assert.match(skill, /Do not create harness files/i);
     assert.match(skill, /intake-question-engine\.mjs/);
+    assert.match(skill, /intake-question-runtime\.mjs/);
     assert.match(skill, /questions\[\]/);
     assert.match(skill, /selected_values/);
     assert.match(skill, /--interview-complete/i);
@@ -115,6 +117,78 @@ describe('oh-my-goal plugin contract', () => {
     assert.equal(commandResult.status, 0, commandResult.stderr || commandResult.stdout);
     assert.match(commandResult.stdout, /omx question --input/);
     assert.match(commandResult.stdout, /questions/);
+  });
+
+  it('provides an optional question runtime with markdown fallback and structured inline answers', () => {
+    const fallback = spawnSync(
+      process.execPath,
+      [
+        questionRuntimePath,
+        '--objective',
+        '계산기 앱을 웹사이트 형태로 만들어줘',
+        '--mode',
+        'auto',
+        '--json',
+      ],
+      {
+        cwd: root,
+        encoding: 'utf-8',
+        env: { ...process.env, TMUX: '', TMUX_PANE: '' },
+      },
+    );
+    assert.equal(fallback.status, 0, fallback.stderr || fallback.stdout);
+    const fallbackPayload = JSON.parse(fallback.stdout) as {
+      ok: boolean;
+      renderer: string;
+      reason?: string;
+      markdown: string;
+      payload: { questions: unknown[] };
+    };
+    assert.equal(fallbackPayload.ok, false);
+    assert.equal(fallbackPayload.renderer, 'markdown');
+    assert.equal(fallbackPayload.reason, 'tmux_not_attached');
+    assert.equal(fallbackPayload.payload.questions.length, 7);
+    assert.match(fallbackPayload.markdown, /Before I create harness files/i);
+
+    const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-runtime-'));
+    try {
+      const inline = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--objective',
+          '계산기 앱을 웹사이트 형태로 만들어줘',
+          '--mode',
+          'inline',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        {
+          cwd: root,
+          encoding: 'utf-8',
+          input: ['1', '1', '1', '1', '1', '1', '1,2', ''].join('\n'),
+          env: { ...process.env, TMUX: '', TMUX_PANE: '' },
+        },
+      );
+      assert.equal(inline.status, 0, inline.stderr || inline.stdout);
+      const jsonStart = inline.stdout.indexOf('{');
+      assert.ok(jsonStart >= 0, inline.stdout);
+      const payload = JSON.parse(inline.stdout.slice(jsonStart)) as {
+        ok: boolean;
+        answers: Array<{ question_id: string; answer: { kind: string; selected_values: string[] } }>;
+        record_path: string;
+      };
+      assert.equal(payload.ok, true);
+      assert.equal(payload.answers.length, 7);
+      assert.equal(payload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
+      assert.equal(payload.answers[6]?.question_id, 'nonGoals');
+      assert.equal(payload.answers[6]?.answer.kind, 'multi');
+      assert.deepEqual(payload.answers[6]?.answer.selected_values, ['no-backend-auth-persistence', 'no-new-dependencies']);
+      assert.match(payload.record_path, /\.omg\/runtime\/questions\/question-/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it('requires an explicit completed interview before accepting supplied answers', () => {

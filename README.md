@@ -53,6 +53,17 @@ node plugins/oh-my-goal/scripts/intake-question-engine.mjs \
 
 That payload uses the canonical `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values` schema from `omx question`.
 
+For an interactive intake UI, use the optional runtime:
+
+```bash
+node plugins/oh-my-goal/scripts/intake-question-runtime.mjs \
+  --objective "계산기 앱을 웹사이트 형태로 만들어줘" \
+  --mode auto \
+  --json
+```
+
+Inside attached tmux it opens a separate question pane and returns structured answers. Outside tmux it returns the same Markdown fallback block for Codex/native input surfaces.
+
 ```text
 .omg/harness/<slug>/
   context-index.md
