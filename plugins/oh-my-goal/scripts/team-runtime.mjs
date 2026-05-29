@@ -85,15 +85,15 @@ function printHelp() {
 
 Usage:
   node scripts/team-runtime.mjs plan --objective "<objective>" [--workers 3] [--json]
-  node scripts/team-runtime.mjs launch --objective "<objective>" [--workers 3] [--mode auto|tmux|dry-run] [--json]
+  node scripts/team-runtime.mjs launch --objective "<objective>" [--workers 3] [--mode auto|cmux|tmux|dry-run] [--json]
   node scripts/team-runtime.mjs status --team <team> [--json]
   node scripts/team-runtime.mjs collect --team <team> [--json]
   node scripts/team-runtime.mjs shutdown --team <team> [--kill-panes] [--json]
 
 Purpose:
   Optional OMX-derived Team bridge for Codex plugin runs. It writes bounded worker
-  packets under .omg/runtime/team/<team>/ and can open visible tmux worker panes
-  when launched from an attached tmux session.
+  packets under .omg/runtime/team/<team>/ and can open visible cmux or tmux
+  worker panes when launched from an attached interactive surface.
 `);
 }
 
@@ -399,6 +399,14 @@ function tmux(args) {
   return spawnSync('tmux', args, { encoding: 'utf-8' });
 }
 
+function cmuxBin() {
+  return safeString(process.env.CMUX_BUNDLED_CLI_PATH).trim() || 'cmux';
+}
+
+function cmux(args) {
+  return spawnSync(cmuxBin(), args, { encoding: 'utf-8' });
+}
+
 function currentTmuxPane() {
   if (!safeString(process.env.TMUX).trim()) return null;
   const target = safeString(process.env.TMUX_PANE).trim();
@@ -418,6 +426,69 @@ function currentTmuxWindow() {
 
 function tmuxAvailable() {
   return Boolean(currentTmuxPane() && currentTmuxWindow());
+}
+
+function cmuxBridgeDisabled() {
+  return safeString(process.env.OMG_DISABLE_CMUX_BRIDGE).trim() === '1';
+}
+
+function parseCmuxRefs(output) {
+  const refs = { workspace: [], pane: [], surface: [] };
+  const matches = safeString(output).match(/\b(?:workspace|pane|surface):[A-Za-z0-9._-]+\b/g) || [];
+  for (const ref of matches) {
+    const [kind] = ref.split(':');
+    if (refs[kind] && !refs[kind].includes(ref)) refs[kind].push(ref);
+  }
+  return refs;
+}
+
+function parseCmuxIdentify(output) {
+  try {
+    const payload = JSON.parse(safeString(output));
+    const caller = payload.caller || {};
+    const focused = payload.focused || {};
+    return {
+      workspace: caller.workspace_ref || focused.workspace_ref || safeString(process.env.CMUX_WORKSPACE_ID).trim(),
+      surface: caller.surface_ref || safeString(process.env.CMUX_SURFACE_ID).trim(),
+      pane: caller.pane_ref || '',
+      focused_surface: focused.surface_ref || '',
+      focused_pane: focused.pane_ref || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function currentCmuxContext() {
+  if (cmuxBridgeDisabled()) return null;
+  const result = cmux(['identify']);
+  if (result.status === 0) {
+    const parsed = parseCmuxIdentify(result.stdout);
+    if (parsed?.workspace) return parsed;
+  }
+  const workspace = safeString(process.env.CMUX_WORKSPACE_ID).trim();
+  const surface = safeString(process.env.CMUX_SURFACE_ID).trim();
+  if (!workspace && !surface) return null;
+  return { workspace, surface, pane: '', focused_surface: '', focused_pane: '' };
+}
+
+function cmuxAvailable() {
+  return Boolean(currentCmuxContext()?.workspace);
+}
+
+function cmuxTargetFromNewPane(output, workspace) {
+  const refs = parseCmuxRefs(output);
+  let surface = refs.surface[0] || '';
+  const pane = refs.pane[0] || '';
+  if (!surface && pane) {
+    const surfaces = cmux(['list-pane-surfaces', '--workspace', workspace, '--pane', pane]);
+    if (surfaces.status === 0) surface = parseCmuxRefs(surfaces.stdout).surface[0] || '';
+  }
+  if (!surface) {
+    const identity = parseCmuxIdentify(cmux(['identify']).stdout);
+    surface = identity?.focused_surface || '';
+  }
+  return { pane, surface };
 }
 
 function shellQuote(value) {
@@ -499,6 +570,67 @@ async function launchTmuxWorkers(cwd, root, config) {
   return launched;
 }
 
+async function launchCmuxWorkers(cwd, root, config) {
+  const context = currentCmuxContext();
+  if (!context?.workspace) throw new Error('cmux mode requires an active cmux workspace.');
+  const workers = [];
+  for (const [index, worker] of config.workers.entries()) {
+    const result = cmux([
+      'new-pane',
+      '--type',
+      'terminal',
+      '--direction',
+      index === 0 ? 'right' : 'down',
+      '--workspace',
+      context.workspace,
+      '--focus',
+      'true',
+    ]);
+    if (result.status !== 0) {
+      throw new Error(safeString(result.stderr).trim() || `failed to launch ${worker.worker_id}`);
+    }
+    const target = cmuxTargetFromNewPane(`${result.stdout}\n${result.stderr}`, context.workspace);
+    if (!target.surface) throw new Error(`failed to resolve cmux surface for ${worker.worker_id}`);
+    const command = `${buildWorkerCommand({ cwd, agent: config.agent, worker, teamName: config.team })}\n`;
+    const send = cmux([
+      'send',
+      '--workspace',
+      context.workspace,
+      '--surface',
+      target.surface,
+      '--',
+      command,
+    ]);
+    if (send.status !== 0) {
+      throw new Error(safeString(send.stderr).trim() || `failed to send command for ${worker.worker_id}`);
+    }
+    const launchedWorker = {
+      ...worker,
+      pane_id: target.pane || null,
+      surface_id: target.surface,
+      renderer: 'cmux-pane',
+    };
+    workers.push(launchedWorker);
+    await updateWorkerStatus(cwd, worker, {
+      status: 'launched',
+      pane_id: launchedWorker.pane_id,
+      surface_id: launchedWorker.surface_id,
+      renderer: launchedWorker.renderer,
+    });
+  }
+  const launched = {
+    ...config,
+    status: 'launched',
+    leader_surface_id: context.surface || null,
+    cmux_workspace: context.workspace,
+    workers,
+    updated_at: new Date().toISOString(),
+  };
+  await writeJsonAtomic(join(root, 'config.json'), launched);
+  await appendEvent(root, { type: 'launched', team: config.team, renderer: 'cmux-pane', surfaces: workers.map((worker) => worker.surface_id) });
+  return launched;
+}
+
 async function commandPlan(args) {
   const objective = normalizeObjective(args.objective);
   const plan = buildTeamExecutionPlan(objective, args.workers, args.explicitWorkers);
@@ -553,7 +685,44 @@ async function commandLaunch(args) {
       workers: launched.workers,
     };
   }
+  if (args.mode === 'cmux') {
+    const launched = await launchCmuxWorkers(cwd, root, config);
+    return {
+      ok: true,
+      command: 'launch',
+      status: 'launched',
+      team: teamName,
+      state_root: relativePath(cwd, root),
+      workers: launched.workers,
+    };
+  }
   if (args.mode === 'auto') {
+    if (cmuxAvailable()) {
+      try {
+        const launched = await launchCmuxWorkers(cwd, root, config);
+        return {
+          ok: true,
+          command: 'launch',
+          status: 'launched',
+          team: teamName,
+          state_root: relativePath(cwd, root),
+          workers: launched.workers,
+        };
+      } catch (error) {
+        if (!tmuxAvailable()) {
+          await appendEvent(root, { type: 'launch_degraded', reason: 'cmux_unavailable', message: error instanceof Error ? error.message : String(error) });
+          return {
+            ok: false,
+            command: 'launch',
+            status: 'planned',
+            reason: 'cmux_unavailable',
+            team: teamName,
+            state_root: relativePath(cwd, root),
+            workers: config.workers,
+          };
+        }
+      }
+    }
     if (!tmuxAvailable()) {
       await appendEvent(root, { type: 'launch_degraded', reason: 'tmux_not_attached' });
       return {
@@ -599,6 +768,8 @@ async function commandStatus(args) {
       worker_id: worker.worker_id,
       role: worker.role,
       pane_id: worker.pane_id || status.pane_id || null,
+      surface_id: worker.surface_id || status.surface_id || null,
+      renderer: worker.renderer || status.renderer || null,
       status: status.status || 'unknown',
       result_exists: existsSync(resultPath),
       inbox: worker.inbox,
@@ -661,6 +832,17 @@ async function commandShutdown(args) {
   const killed = [];
   if (args.killPanes) {
     for (const worker of config.workers || []) {
+      if (worker.surface_id) {
+        const workspace = config.cmux_workspace || safeString(process.env.CMUX_WORKSPACE_ID).trim();
+        const result = cmux([
+          'close-surface',
+          ...(workspace ? ['--workspace', workspace] : []),
+          '--surface',
+          worker.surface_id,
+        ]);
+        if (result.status === 0) killed.push(worker.surface_id);
+        continue;
+      }
       if (!worker.pane_id) continue;
       const result = tmux(['kill-pane', '-t', worker.pane_id]);
       if (result.status === 0) killed.push(worker.pane_id);

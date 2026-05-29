@@ -95,13 +95,14 @@ function printHelp() {
   console.log(`oh-my-goal intake-question-runtime
 
 Usage:
-  node scripts/intake-question-runtime.mjs --objective "<objective>" [--mode auto|tmux|inline|markdown|sequential] [--json]
+  node scripts/intake-question-runtime.mjs --objective "<objective>" [--mode auto|cmux|tmux|inline|markdown|sequential] [--json]
   node scripts/intake-question-runtime.mjs --mode status --state-path <path> [--json]
   node scripts/intake-question-runtime.mjs --mode sequential-answer --state-path <path> --answer <selection> [--json]
   node scripts/intake-question-runtime.mjs --ui --state-path <path>
 
 Modes:
-  auto      Open tmux arrow-key UI when attached; on macOS open Terminal UI; return prompting state instead of blocking.
+  auto      Open cmux/tmux arrow-key UI when attached; on macOS open Terminal UI; return prompting state instead of blocking.
+  cmux      Require cmux pane arrow-key UI and return prompting state.
   tmux      Require tmux pane arrow-key UI and block until answered.
   inline    Ask in the current terminal; uses arrow-key UI when TTY is available.
   markdown  Print the non-interactive fallback block.
@@ -153,6 +154,14 @@ function buildRecord(input, cwd) {
 
 function tmux(args) {
   return spawnSync('tmux', args, { encoding: 'utf-8' });
+}
+
+function cmuxBin() {
+  return safeString(process.env.CMUX_BUNDLED_CLI_PATH).trim() || 'cmux';
+}
+
+function cmux(args) {
+  return spawnSync(cmuxBin(), args, { encoding: 'utf-8' });
 }
 
 function shellQuote(value) {
@@ -257,6 +266,118 @@ function launchTmuxUi(statePath, record) {
   };
 }
 
+function cmuxBridgeDisabled() {
+  return safeString(process.env.OMG_DISABLE_CMUX_BRIDGE).trim() === '1';
+}
+
+function parseCmuxRefs(output) {
+  const refs = { workspace: [], pane: [], surface: [] };
+  const matches = safeString(output).match(/\b(?:workspace|pane|surface):[A-Za-z0-9._-]+\b/g) || [];
+  for (const ref of matches) {
+    const [kind] = ref.split(':');
+    if (refs[kind] && !refs[kind].includes(ref)) refs[kind].push(ref);
+  }
+  return refs;
+}
+
+function parseCmuxIdentify(output) {
+  try {
+    const payload = JSON.parse(safeString(output));
+    const caller = payload.caller || {};
+    const focused = payload.focused || {};
+    return {
+      workspace: caller.workspace_ref || focused.workspace_ref || safeString(process.env.CMUX_WORKSPACE_ID).trim(),
+      surface: caller.surface_ref || safeString(process.env.CMUX_SURFACE_ID).trim(),
+      pane: caller.pane_ref || '',
+      focused_surface: focused.surface_ref || '',
+      focused_pane: focused.pane_ref || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function currentCmuxContext() {
+  if (cmuxBridgeDisabled()) return null;
+  const result = cmux(['identify']);
+  if (result.status === 0) {
+    const parsed = parseCmuxIdentify(result.stdout);
+    if (parsed?.workspace) return parsed;
+  }
+  const workspace = safeString(process.env.CMUX_WORKSPACE_ID).trim();
+  const surface = safeString(process.env.CMUX_SURFACE_ID).trim();
+  if (!workspace && !surface) return null;
+  return { workspace, surface, pane: '', focused_surface: '', focused_pane: '' };
+}
+
+function cmuxAvailable() {
+  return Boolean(currentCmuxContext()?.workspace);
+}
+
+function cmuxTargetFromNewPane(output, workspace) {
+  const refs = parseCmuxRefs(output);
+  let surface = refs.surface[0] || '';
+  const pane = refs.pane[0] || '';
+  if (!surface && pane) {
+    const surfaces = cmux(['list-pane-surfaces', '--workspace', workspace, '--pane', pane]);
+    if (surfaces.status === 0) surface = parseCmuxRefs(surfaces.stdout).surface[0] || '';
+  }
+  if (!surface) {
+    const identity = parseCmuxIdentify(cmux(['identify']).stdout);
+    surface = identity?.focused_surface || '';
+  }
+  return { pane, surface };
+}
+
+function buildQuestionUiCommand(statePath, cwd) {
+  const scriptPath = fileURLToPath(import.meta.url);
+  return [
+    `cd ${shellQuote(cwd)}`,
+    `printf '\\\\033]0;Oh My Goal Intake\\\\007'`,
+    `OMG_QUESTION_RETURN_TRANSPORT=state ${shellQuote(process.execPath)} ${shellQuote(scriptPath)} --ui --state-path ${shellQuote(statePath)}`,
+    'exit',
+  ].join('; ');
+}
+
+function launchCmuxUi(statePath, record) {
+  const context = currentCmuxContext();
+  if (!context?.workspace) throw new Error('cmux mode requires an active cmux workspace.');
+  const result = cmux([
+    'new-pane',
+    '--type',
+    'terminal',
+    '--direction',
+    'down',
+    '--workspace',
+    context.workspace,
+    '--focus',
+    'true',
+  ]);
+  if (result.status !== 0) throw new Error(safeString(result.stderr).trim() || 'failed to launch cmux question pane');
+  const target = cmuxTargetFromNewPane(`${result.stdout}\n${result.stderr}`, context.workspace);
+  if (!target.surface) throw new Error('failed to resolve cmux question surface');
+  const send = cmux([
+    'send',
+    '--workspace',
+    context.workspace,
+    '--surface',
+    target.surface,
+    '--',
+    `${buildQuestionUiCommand(statePath, record.cwd || process.cwd())}\n`,
+  ]);
+  if (send.status !== 0) throw new Error(safeString(send.stderr).trim() || 'failed to send cmux question command');
+  return {
+    renderer: 'cmux-pane',
+    target: target.surface,
+    pane: target.pane || undefined,
+    workspace: context.workspace,
+    leader_surface: context.surface || undefined,
+    return_target: context.surface || undefined,
+    return_transport: 'state',
+    launched_at: new Date().toISOString(),
+  };
+}
+
 function macosTerminalBridgeAvailable() {
   if (process.platform !== 'darwin') return false;
   if (safeString(process.env.OMG_DISABLE_TERMINAL_BRIDGE).trim() === '1') return false;
@@ -264,14 +385,8 @@ function macosTerminalBridgeAvailable() {
 }
 
 function launchMacosTerminalUi(statePath, record) {
-  const scriptPath = fileURLToPath(import.meta.url);
   const cwd = record.cwd || process.cwd();
-  const command = [
-    `cd ${shellQuote(cwd)}`,
-    `printf '\\\\033]0;Oh My Goal Intake\\\\007'`,
-    `OMG_QUESTION_RETURN_TRANSPORT=state ${shellQuote(process.execPath)} ${shellQuote(scriptPath)} --ui --state-path ${shellQuote(statePath)}`,
-    'exit',
-  ].join('; ');
+  const command = buildQuestionUiCommand(statePath, cwd);
   const appleScript = [
     'tell application "Terminal"',
     `  do script ${JSON.stringify(command)}`,
@@ -974,6 +1089,10 @@ async function runMacosTerminal(cwd, input) {
   return runInteractiveStart(cwd, input, launchMacosTerminalUi);
 }
 
+async function runCmuxStart(cwd, input) {
+  return runInteractiveStart(cwd, input, launchCmuxUi);
+}
+
 async function runTmuxStart(cwd, input) {
   return runInteractiveStart(cwd, input, launchTmuxUi);
 }
@@ -1033,7 +1152,25 @@ async function main() {
     printPayload(await runTmux(cwd, input, timeoutMs), args.json);
     return;
   }
+  if (args.mode === 'cmux') {
+    printPayload(await runCmuxStart(cwd, input), args.json);
+    return;
+  }
   if (args.mode === 'auto') {
+    if (cmuxAvailable()) {
+      try {
+        printPayload(await runCmuxStart(cwd, input), args.json);
+        return;
+      } catch (error) {
+        if (!tmuxAvailable() && !macosTerminalBridgeAvailable()) {
+          printPayload({
+            ...await runSequentialStart(cwd, input),
+            fallback_reason: `cmux-unavailable: ${error instanceof Error ? error.message : String(error)}`,
+          }, args.json);
+          return;
+        }
+      }
+    }
     if (tmuxAvailable()) {
       printPayload(await runTmuxStart(cwd, input), args.json);
       return;

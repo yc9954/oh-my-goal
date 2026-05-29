@@ -1,6 +1,6 @@
 # Worker Packet Template
 
-Copy this packet for each worker or sequential evidence lane. Prefer `scripts/team-runtime.mjs launch --mode auto` when visible tmux worker panes or durable worker state are useful.
+Copy this packet for each worker or sequential evidence lane. Prefer `scripts/team-runtime.mjs launch --mode auto` when visible cmux/tmux worker panes or durable worker state are useful.
 
 ```md
 # Worker Packet

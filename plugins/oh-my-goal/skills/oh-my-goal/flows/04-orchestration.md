@@ -15,10 +15,10 @@ The Team bridge ports the useful OMX Team execution surface into plugin-local st
 - task decomposition and role routing,
 - `.omg/runtime/team/<team>/config.json`,
 - worker `inbox.md`, `prompt.md`, `status.json`, and `result.md` paths,
-- optional tmux panes when launched from an attached tmux session,
+- optional cmux/tmux panes when launched from an attached interactive session,
 - `status`, `collect`, and `shutdown` commands for inspection and cleanup.
 
-If tmux is unavailable, `--mode auto` degrades to planned state and worker packets. Continue sequentially from those packets and record results.
+If cmux/tmux is unavailable, `--mode auto` degrades to planned state and worker packets. Continue sequentially from those packets and record results.
 
 ## Leader And Workers
 

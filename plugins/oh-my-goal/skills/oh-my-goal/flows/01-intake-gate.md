@@ -55,7 +55,7 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
   --json
 ```
 
-In attached tmux, `auto` opens a separate arrow-key question pane. On macOS outside tmux, it can open a Terminal question window with the same selector. The UI ports OMX `src/question/ui.ts` behavior: ↑↓ movement, Enter selects single-answer questions, Space toggles `multi-answerable`, Enter/→ advances multi-answer questions, and ← goes back.
+Inside cmux, `auto` opens a focused in-workspace question pane. In attached tmux, it opens a separate arrow-key question pane. On macOS outside cmux/tmux, it can open a Terminal question window with the same selector. The UI ports OMX `src/question/ui.ts` behavior: ↑↓ movement, Enter selects single-answer questions, Space toggles `multi-answerable`, Enter/→ advances multi-answer questions, and ← goes back.
 
 If `auto` returns `ok: false`, `interactive: true`, and `status: "prompting"`, tell the user to answer in that window and stop. Do not ask the text fallback question too. On the next user turn, read the record:
 

@@ -31,6 +31,7 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(skill, /--mode auto/);
     assert.match(skill, /--mode sequential/);
     assert.match(skill, /sequential-answer/);
+    assert.match(skill, /cmux/i);
     assert.match(skill, /ambiguity score/i);
     assert.match(skill, /team-runtime\.mjs/);
     assert.match(skill, /runtime-commands\.md/);
@@ -160,12 +161,73 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(runtimeSource, /#\{pane_id\}/);
     assert.match(runtimeSource, /OMG_QUESTION_RETURN_PANE/);
     assert.match(runtimeSource, /isCurrentTmuxSessionAttached/);
+    assert.match(runtimeSource, /launchCmuxUi/);
+    assert.match(runtimeSource, /CMUX_WORKSPACE_ID/);
+    assert.match(runtimeSource, /cmux-pane/);
     assert.match(runtimeSource, /launchMacosTerminalUi/);
     assert.match(runtimeSource, /osascript/);
     const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-runtime-'));
     try {
       const fakeBin = join(cwd, 'bin');
       mkdirSync(fakeBin);
+      const fakeCmux = join(fakeBin, 'cmux');
+      writeFileSync(
+        fakeCmux,
+        `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args[0] === 'identify') {
+  process.stdout.write(JSON.stringify({
+    caller: { workspace_ref: 'workspace:1', surface_ref: 'surface:1', pane_ref: 'pane:1' },
+    focused: { workspace_ref: 'workspace:1', surface_ref: 'surface:99', pane_ref: 'pane:99' }
+  }));
+  process.exit(0);
+}
+if (args[0] === 'new-pane') {
+  process.stdout.write('pane:99\\nsurface:99\\n');
+  process.exit(0);
+}
+if (args[0] === 'list-pane-surfaces') {
+  process.stdout.write('surface:99\\n');
+  process.exit(0);
+}
+if (args[0] === 'send') {
+  if (process.env.OMG_FAKE_CMUX_WRITE_ANSWER !== '0') {
+    const command = args[args.length - 1] || '';
+    const match = command.match(/--state-path '([^']+)'/);
+    if (!match) {
+      console.error('missing state path');
+      process.exit(1);
+    }
+    const statePath = match[1];
+    const record = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    const answers = record.questions.map((question, index) => {
+      const selected = question.options[0];
+      const multi = question.type === 'multi-answerable' || question.multi_select === true;
+      return {
+        question_id: question.id,
+        index,
+        answer: multi
+          ? { kind: 'multi', value: [selected.value], selected_labels: [selected.label], selected_values: [selected.value] }
+          : { kind: 'option', value: selected.value, selected_labels: [selected.label], selected_values: [selected.value] }
+      };
+    });
+    fs.writeFileSync(statePath, JSON.stringify({
+      ...record,
+      status: 'answered',
+      updated_at: new Date().toISOString(),
+      answers,
+      answer: answers[0].answer
+    }, null, 2));
+  }
+  process.exit(0);
+}
+process.exit(0);
+`,
+        'utf-8',
+      );
+      chmodSync(fakeCmux, 0o755);
+
       const fakeTmux = join(fakeBin, 'tmux');
       writeFileSync(
         fakeTmux,
@@ -213,6 +275,112 @@ process.exit(0);
       );
       chmodSync(fakeTmux, 0o755);
 
+      const cmuxBridge = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--objective',
+          '계산기 앱을 웹사이트 형태로 만들어줘',
+          '--mode',
+          'auto',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        {
+          cwd: root,
+          encoding: 'utf-8',
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}:${process.env.PATH || ''}`,
+            CMUX_BUNDLED_CLI_PATH: fakeCmux,
+            CMUX_WORKSPACE_ID: 'workspace:1',
+            CMUX_SURFACE_ID: 'surface:1',
+            TMUX: '',
+            TMUX_PANE: '',
+            OMG_DISABLE_TERMINAL_BRIDGE: '1',
+          },
+        },
+      );
+      assert.equal(cmuxBridge.status, 0, cmuxBridge.stderr || cmuxBridge.stdout);
+      const cmuxPayload = JSON.parse(cmuxBridge.stdout) as {
+        ok: boolean;
+        renderer?: { renderer?: string; target?: string; return_target?: string; workspace?: string };
+        answers: Array<{ answer: { selected_values: string[] } }>;
+      };
+      assert.equal(cmuxPayload.ok, true);
+      assert.equal(cmuxPayload.renderer?.renderer, 'cmux-pane');
+      assert.equal(cmuxPayload.renderer?.target, 'surface:99');
+      assert.equal(cmuxPayload.renderer?.return_target, 'surface:1');
+      assert.equal(cmuxPayload.renderer?.workspace, 'workspace:1');
+      assert.equal(cmuxPayload.answers.length, 7);
+      assert.equal(cmuxPayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
+
+      const cmuxPrompting = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--objective',
+          '계산기 앱을 웹사이트 형태로 만들어줘',
+          '--mode',
+          'auto',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        {
+          cwd: root,
+          encoding: 'utf-8',
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}:${process.env.PATH || ''}`,
+            CMUX_BUNDLED_CLI_PATH: fakeCmux,
+            CMUX_WORKSPACE_ID: 'workspace:1',
+            CMUX_SURFACE_ID: 'surface:1',
+            TMUX: '',
+            TMUX_PANE: '',
+            OMG_DISABLE_TERMINAL_BRIDGE: '1',
+            OMG_FAKE_CMUX_WRITE_ANSWER: '0',
+          },
+        },
+      );
+      assert.equal(cmuxPrompting.status, 0, cmuxPrompting.stderr || cmuxPrompting.stdout);
+      const cmuxPromptingPayload = JSON.parse(cmuxPrompting.stdout) as {
+        ok: boolean;
+        interactive?: boolean;
+        renderer: string;
+        status: string;
+        record_path: string;
+      };
+      assert.equal(cmuxPromptingPayload.ok, false);
+      assert.equal(cmuxPromptingPayload.interactive, true);
+      assert.equal(cmuxPromptingPayload.renderer, 'cmux-pane');
+      assert.equal(cmuxPromptingPayload.status, 'prompting');
+
+      const cmuxPromptingStatus = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--mode',
+          'status',
+          '--state-path',
+          cmuxPromptingPayload.record_path,
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(cmuxPromptingStatus.status, 0, cmuxPromptingStatus.stderr || cmuxPromptingStatus.stdout);
+      const cmuxPromptingStatusPayload = JSON.parse(cmuxPromptingStatus.stdout) as {
+        ok: boolean;
+        interactive?: boolean;
+        renderer: string;
+        status: string;
+      };
+      assert.equal(cmuxPromptingStatusPayload.ok, false);
+      assert.equal(cmuxPromptingStatusPayload.interactive, true);
+      assert.equal(cmuxPromptingStatusPayload.renderer, 'cmux-pane');
+      assert.equal(cmuxPromptingStatusPayload.status, 'prompting');
+
       const tmuxBridge = spawnSync(
         process.execPath,
         [
@@ -233,6 +401,7 @@ process.exit(0);
             PATH: `${fakeBin}:${process.env.PATH || ''}`,
             TMUX: '/tmp/fake-tmux',
             TMUX_PANE: '%1',
+            OMG_DISABLE_CMUX_BRIDGE: '1',
           },
         },
       );
@@ -307,6 +476,7 @@ process.exit(0);
               PATH: `${fakeBin}:${process.env.PATH || ''}`,
               TMUX: '',
               TMUX_PANE: '',
+              OMG_DISABLE_CMUX_BRIDGE: '1',
             },
           },
         );
@@ -350,6 +520,7 @@ process.exit(0);
               PATH: `${fakeBin}:${process.env.PATH || ''}`,
               TMUX: '',
               TMUX_PANE: '',
+              OMG_DISABLE_CMUX_BRIDGE: '1',
             },
           },
         );
@@ -408,7 +579,7 @@ process.exit(0);
         {
           cwd: root,
           encoding: 'utf-8',
-          env: { ...process.env, TMUX: '', TMUX_PANE: '', OMG_DISABLE_TERMINAL_BRIDGE: '1' },
+          env: { ...process.env, TMUX: '', TMUX_PANE: '', OMG_DISABLE_CMUX_BRIDGE: '1', OMG_DISABLE_TERMINAL_BRIDGE: '1' },
         },
       );
       assert.equal(fallback.status, 0, fallback.stderr || fallback.stdout);
@@ -436,7 +607,7 @@ process.exit(0);
           cwd,
           '--json',
         ],
-        { cwd: root, encoding: 'utf-8', env: { ...process.env, TMUX: '', TMUX_PANE: '', OMG_DISABLE_TERMINAL_BRIDGE: '1' } },
+        { cwd: root, encoding: 'utf-8', env: { ...process.env, TMUX: '', TMUX_PANE: '', OMG_DISABLE_CMUX_BRIDGE: '1', OMG_DISABLE_TERMINAL_BRIDGE: '1' } },
       );
       assert.equal(sequential.status, 0, sequential.stderr || sequential.stdout);
       const sequentialPayload = JSON.parse(sequential.stdout) as {
@@ -497,7 +668,7 @@ process.exit(0);
           cwd: root,
           encoding: 'utf-8',
           input: ['1', '1', '1', '1', '1', '1', '1,2', ''].join('\n'),
-          env: { ...process.env, TMUX: '', TMUX_PANE: '' },
+          env: { ...process.env, TMUX: '', TMUX_PANE: '', OMG_DISABLE_CMUX_BRIDGE: '1' },
         },
       );
       assert.equal(inline.status, 0, inline.stderr || inline.stdout);
@@ -521,6 +692,10 @@ process.exit(0);
   });
 
   it('ports the useful OMX Team surface into an optional plugin team runtime', () => {
+    const teamRuntimeSource = readFileSync(teamRuntimePath, 'utf-8');
+    assert.match(teamRuntimeSource, /launchCmuxWorkers/);
+    assert.match(teamRuntimeSource, /CMUX_WORKSPACE_ID/);
+    assert.match(teamRuntimeSource, /cmux-pane/);
     const plan = spawnSync(
       process.execPath,
       [
@@ -614,6 +789,88 @@ process.exit(0);
       assert.equal(collectPayload.results[0]?.status, 'reported');
       assert.equal(collectPayload.results[1]?.status, 'pending');
       assert.ok(existsSync(join(cwd, collectPayload.summary)));
+
+      const fakeBin = join(cwd, 'bin');
+      mkdirSync(fakeBin);
+      const fakeCmux = join(fakeBin, 'cmux');
+      writeFileSync(
+        fakeCmux,
+        `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const logPath = process.env.OMG_FAKE_CMUX_LOG;
+const args = process.argv.slice(2);
+if (logPath) fs.appendFileSync(logPath, JSON.stringify(args) + '\\n');
+if (args[0] === 'identify') {
+  process.stdout.write(JSON.stringify({
+    caller: { workspace_ref: 'workspace:1', surface_ref: 'surface:1', pane_ref: 'pane:1' },
+    focused: { workspace_ref: 'workspace:1', surface_ref: 'surface:10', pane_ref: 'pane:10' }
+  }));
+  process.exit(0);
+}
+if (args[0] === 'new-pane') {
+  const countPath = path.join(path.dirname(logPath), 'count.txt');
+  const count = fs.existsSync(countPath) ? Number(fs.readFileSync(countPath, 'utf8')) + 1 : 1;
+  fs.writeFileSync(countPath, String(count));
+  process.stdout.write('pane:' + (90 + count) + '\\nsurface:' + (90 + count) + '\\n');
+  process.exit(0);
+}
+if (args[0] === 'list-pane-surfaces') {
+  process.stdout.write('surface:99\\n');
+  process.exit(0);
+}
+if (args[0] === 'send' || args[0] === 'close-surface') process.exit(0);
+process.exit(0);
+`,
+        'utf-8',
+      );
+      chmodSync(fakeCmux, 0o755);
+      const cmuxLog = join(cwd, 'cmux.log');
+      const cmuxLaunch = spawnSync(
+        process.execPath,
+        [
+          teamRuntimePath,
+          'launch',
+          '--objective',
+          'cmux worker lanes',
+          '--workers',
+          '2',
+          '--mode',
+          'auto',
+          '--agent',
+          'shell',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        {
+          cwd: root,
+          encoding: 'utf-8',
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}:${process.env.PATH || ''}`,
+            CMUX_BUNDLED_CLI_PATH: fakeCmux,
+            CMUX_WORKSPACE_ID: 'workspace:1',
+            CMUX_SURFACE_ID: 'surface:1',
+            TMUX: '',
+            TMUX_PANE: '',
+            OMG_FAKE_CMUX_LOG: cmuxLog,
+          },
+        },
+      );
+      assert.equal(cmuxLaunch.status, 0, cmuxLaunch.stderr || cmuxLaunch.stdout);
+      const cmuxLaunchPayload = JSON.parse(cmuxLaunch.stdout) as {
+        ok: boolean;
+        status: string;
+        workers: Array<{ renderer?: string; surface_id?: string; pane_id?: string }>;
+      };
+      assert.equal(cmuxLaunchPayload.ok, true);
+      assert.equal(cmuxLaunchPayload.status, 'launched');
+      assert.equal(cmuxLaunchPayload.workers[0]?.renderer, 'cmux-pane');
+      assert.equal(cmuxLaunchPayload.workers[0]?.surface_id, 'surface:91');
+      assert.equal(cmuxLaunchPayload.workers[1]?.pane_id, 'pane:92');
+      assert.match(readFileSync(cmuxLog, 'utf-8'), /"new-pane"/);
+      assert.match(readFileSync(cmuxLog, 'utf-8'), /"send"/);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

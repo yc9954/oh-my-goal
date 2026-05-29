@@ -2,7 +2,7 @@
 
 Use this shape for `INTAKE_PENDING`. The wording can be adapted, but the order and stop behavior should not change.
 
-Generate intake from the OMX-style runtime in `auto` mode. In attached tmux, this opens the ↑↓/Space/Enter selector pane. On macOS outside tmux, it can open a Terminal selector window. Single-answer questions require Enter to select. In non-interactive text surfaces, it returns the next single-question prompt.
+Generate intake from the OMX-style runtime in `auto` mode. In cmux, this opens an in-workspace ↑↓/Space/Enter selector pane. In attached tmux, it opens a selector pane. On macOS outside cmux/tmux, it can open a Terminal selector window. Single-answer questions require Enter to select. In non-interactive text surfaces, it returns the next single-question prompt.
 
 ```sh
 node <plugin-root>/scripts/intake-question-runtime.mjs --objective "<objective>" --mode auto --json
