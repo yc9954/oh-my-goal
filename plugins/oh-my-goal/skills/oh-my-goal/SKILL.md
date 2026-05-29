@@ -7,7 +7,7 @@ description: Codex-native goal harness bootstrap. Use when the user invokes `$oh
 
 Use `$oh-my-goal <objective>` to turn a vague development idea into a Codex goal-ready harness. Treat any text after `$oh-my-goal` as the objective and do not ask for it again.
 
-This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launcher. Reuse the useful OMX ideas through Markdown flow files, local harness artifacts, and Codex-native worker lanes.
+This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launcher.
 
 ## Non-Negotiable Contract
 
@@ -19,22 +19,16 @@ This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launch
 
 ## Flow Files
 
-- `FLOW.md` - required first read; top-level state machine and routing.
-- `flows/00-entrypoint.md` - required first read; state machine and phase routing.
-- `flows/01-intake-gate.md` - preflight, ambiguity map, and first questionnaire rules.
-- `flows/02-artifact-generation.md` - generator usage and required harness files.
-- `flows/03-goal-handoff.md` - recommended `create_goal` prompt rules.
-- `flows/04-orchestration.md` - leader, workers, Team runtime bridge, packets, and local-optimum pressure.
-- `templates/first-turn-response.md` - required output shape for the first intake turn.
-- `templates/intake-fallback.md` - numbered prose fallback questions when structured input is unavailable.
-- `templates/worker-packet.md` - worker lane packet template.
-- `references/omx-patterns.md` - OMX-derived design patterns to preserve.
+- `FLOW.md` - read first.
+- `flows/00-entrypoint.md`, `flows/01-intake-gate.md`, `flows/02-artifact-generation.md`, `flows/03-goal-handoff.md`, `flows/04-orchestration.md`.
+- `templates/first-turn-response.md`, `templates/intake-fallback.md`, `templates/worker-packet.md`.
+- `references/omx-patterns.md`.
 
 ## Tool Boundary
 
 Resolve `<plugin-root>` as the directory two levels above this skill directory. From `skills/oh-my-goal/SKILL.md`, the scripts live at `../../scripts/*.mjs`. Do not look for scripts under `skills/oh-my-goal/scripts/`.
 
-Build intake questions with `scripts/intake-question-engine.mjs`, which ports the OMX `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values` schema. For the first user-facing turn, use `scripts/intake-question-runtime.mjs --mode sequential --json`: it asks one question at a time, persists `record_path`, and shows an ambiguity score. Continue each user answer with `--mode sequential-answer --state-path <record_path> --answer <selection> --json` until the runtime returns `ok: true`.
+Build intake questions with `scripts/intake-question-engine.mjs`, which ports OMX `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values`. `scripts/intake-question-runtime.mjs` ports the OMX arrow-key UI from `src/question/ui.ts`: `--mode auto` opens a tmux arrow-key pane when attached and otherwise starts sequential fallback; `--mode inline` uses ↑↓/Space/Enter when TTY is available. For Codex text surfaces, use `--mode sequential --json` with its ambiguity score; continue answers with `--mode sequential-answer --state-path <record_path> --answer <selection> --json` until `ok: true`.
 
 When independent worker lanes are useful, use `scripts/team-runtime.mjs`. It ports the useful OMX Team execution surface into plugin-local state: task decomposition, worker packets, `.omg/runtime/team/<team>/` state, optional tmux worker panes, status, collection, and shutdown. Workers still must not own the Codex goal.
 

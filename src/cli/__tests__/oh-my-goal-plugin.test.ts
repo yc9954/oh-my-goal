@@ -150,39 +150,44 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(commandResult.stdout, /questions/);
   });
 
-  it('provides an optional question runtime with markdown fallback and structured inline answers', () => {
-    const fallback = spawnSync(
-      process.execPath,
-      [
-        questionRuntimePath,
-        '--objective',
-        '계산기 앱을 웹사이트 형태로 만들어줘',
-        '--mode',
-        'auto',
-        '--json',
-      ],
-      {
-        cwd: root,
-        encoding: 'utf-8',
-        env: { ...process.env, TMUX: '', TMUX_PANE: '' },
-      },
-    );
-    assert.equal(fallback.status, 0, fallback.stderr || fallback.stdout);
-    const fallbackPayload = JSON.parse(fallback.stdout) as {
-      ok: boolean;
-      renderer: string;
-      reason?: string;
-      markdown: string;
-      payload: { questions: unknown[] };
-    };
-    assert.equal(fallbackPayload.ok, false);
-    assert.equal(fallbackPayload.renderer, 'markdown');
-    assert.equal(fallbackPayload.reason, 'tmux_not_attached');
-    assert.equal(fallbackPayload.payload.questions.length, 7);
-    assert.match(fallbackPayload.markdown, /Before I create harness files/i);
-
+  it('provides an optional question runtime with arrow UI support, sequential fallback, and structured inline answers', () => {
+    const runtimeSource = readFileSync(questionRuntimePath, 'utf-8');
+    assert.match(runtimeSource, /emitKeypressEvents/);
+    assert.match(runtimeSource, /renderQuestionWizardFrame/);
+    assert.match(runtimeSource, /↑↓ move/);
     const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-runtime-'));
     try {
+      const fallback = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--objective',
+          '계산기 앱을 웹사이트 형태로 만들어줘',
+          '--mode',
+          'auto',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        {
+          cwd: root,
+          encoding: 'utf-8',
+          env: { ...process.env, TMUX: '', TMUX_PANE: '' },
+        },
+      );
+      assert.equal(fallback.status, 0, fallback.stderr || fallback.stdout);
+      const fallbackPayload = JSON.parse(fallback.stdout) as {
+        ok: boolean;
+        renderer: string;
+        status: string;
+        prompt: string;
+      };
+      assert.equal(fallbackPayload.ok, false);
+      assert.equal(fallbackPayload.renderer, 'sequential');
+      assert.equal(fallbackPayload.status, 'prompting');
+      assert.match(fallbackPayload.prompt, /Question 1 of 7/);
+      assert.match(fallbackPayload.prompt, /Ambiguity: 0\.86 \(high\)/);
+
       const sequential = spawnSync(
         process.execPath,
         [

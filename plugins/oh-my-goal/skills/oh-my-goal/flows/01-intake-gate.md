@@ -67,7 +67,7 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
 
 If the result is still `status: "prompting"`, ask the next `prompt` and stop again. If the result has `ok: true`, use its `answers[]` as the approved intake answers.
 
-For an attached tmux blocking UI, the bundled runtime can still collect all answers in a pane:
+For an attached tmux blocking UI, the bundled runtime ports OMX `src/question/ui.ts` behavior and collects answers in a pane with ↑↓ movement, Space toggles for `multi-answerable`, Enter/→ next, and ← back:
 
 ```sh
 node <plugin-root>/scripts/intake-question-runtime.mjs \
@@ -76,7 +76,7 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
   --json
 ```
 
-In attached tmux, it opens a separate question pane and returns structured answers. Outside tmux, do not fall back to a batched questionnaire unless the user explicitly asks for all questions at once. Use sequential mode first. The Markdown schema block is only a last-resort diagnostic fallback.
+In attached tmux, it opens a separate arrow-key question pane and returns structured answers. Outside tmux, do not fall back to a batched questionnaire unless the user explicitly asks for all questions at once. Use sequential mode first. The Markdown schema block is only a last-resort diagnostic fallback.
 
 For PRD/spec/planning requests, ask about:
 

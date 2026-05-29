@@ -2,7 +2,7 @@
 
 Use this shape for `INTAKE_PENDING`. The wording can be adapted, but the order and stop behavior should not change.
 
-Generate the first question from the sequential OMX runtime:
+Generate the first question from the sequential OMX runtime. When tmux or a real TTY is available, the runtime can use the OMX-style ↑↓/Space/Enter selector; in Codex text surfaces it returns the next single-question prompt.
 
 ```sh
 node <plugin-root>/scripts/intake-question-runtime.mjs --objective "<objective>" --mode sequential --json
