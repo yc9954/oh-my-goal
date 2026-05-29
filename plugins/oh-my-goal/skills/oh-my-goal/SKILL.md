@@ -13,7 +13,7 @@ This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launch
 
 1. Read `FLOW.md` before taking any action.
 2. The first `$oh-my-goal <objective>` response is an intake turn, not an execution turn.
-3. After repo/context preflight, ask the structured intake questions and stop.
+3. After repo/context preflight, ask structured intake questions until residual ambiguity is low enough, then stop.
 4. Do not create harness files, run the artifact generator, write implementation files, call `create_goal`, or start coding until the user answers the intake questions.
 5. Skip the interview gate only when the user explicitly says to use defaults, skip questions, or proceed without interview.
 
@@ -28,7 +28,7 @@ This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launch
 
 Resolve `<plugin-root>` as the directory two levels above this skill directory. From `skills/oh-my-goal/SKILL.md`, the scripts live at `../../scripts/*.mjs`. Do not look for scripts under `skills/oh-my-goal/scripts/`.
 
-Build intake questions with `scripts/intake-question-engine.mjs`, which ports OMX `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values`. `scripts/intake-question-runtime.mjs` ports the OMX arrow-key UI from `src/question/ui.ts`: start with `--mode auto`; cmux opens an in-workspace pane, attached tmux opens an arrow-key pane, macOS can open a Terminal question window, and other surfaces return sequential fallback with an ambiguity score. If auto returns interactive `status: "prompting"`, stop and later read it with `--mode status --state-path <record_path>`. Continue fallback answers with `--mode sequential-answer --state-path <record_path> --answer <selection> --json` until `ok: true`.
+Build intake questions with `scripts/intake-question-engine.mjs`, which ports OMX `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values`. `scripts/intake-question-runtime.mjs` ports the OMX arrow-key UI from `src/question/ui.ts`: start with `--mode auto`; cmux opens an in-workspace pane, attached tmux opens an arrow-key pane, macOS can open a Terminal question window, and other surfaces return sequential fallback with an ambiguity score. If auto returns interactive `status: "prompting"`, stop and later read it with `--mode status --state-path <record_path>`. The runtime starts with a baseline intake and appends follow-up questions when `residual_ambiguity.score` remains above threshold. Continue fallback answers with `--mode sequential-answer --state-path <record_path> --answer <selection> --json` until `ok: true`.
 
 When independent worker lanes are useful, use `scripts/team-runtime.mjs`. It ports the useful OMX Team execution surface into plugin-local state: task decomposition, worker packets, `.omg/runtime/team/<team>/` state, optional cmux/tmux worker panes, status, collection, and shutdown. Workers still must not own the Codex goal.
 

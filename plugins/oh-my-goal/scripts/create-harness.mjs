@@ -257,7 +257,7 @@ function artifactMap({ objective, slug, route, answers }) {
       '',
       'Gap-fill contract:',
       '1. Assimilate the answer into scope, non-goals, acceptance, verification, and handoff target.',
-      '2. Rescan repo context, prior turns, and conservative defaults. Ask another round only for surviving critical ambiguity.',
+      '2. Rescan repo context, prior turns, and conservative defaults. Ask focused follow-up questions until residual ambiguity is below threshold.',
       '',
       markdownTable(
         ['Key', 'Question', 'Recorded answer'],
@@ -314,7 +314,7 @@ function artifactMap({ objective, slug, route, answers }) {
       '1. Treat trailing text after `$oh-my-goal` as the objective.',
       '2. Build an ambiguity map before asking questions.',
       '3. Batch independent high-leverage questions into one structured intake round when possible.',
-      '4. Run two gap-fill passes after answers: assimilation, then residual critical-gap scan.',
+      '4. Run gap-fill passes after answers: assimilation, residual critical-gap scan, then follow-up questions until ambiguity is low enough.',
       '5. Create or reuse one Codex goal with the prompt in `goal-prompt.md`.',
       '6. Read `runtime-commands.md` and auto-start Team runtime when independent lanes improve quality.',
       '7. Record candidate trajectories before selecting a plan.',

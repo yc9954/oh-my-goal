@@ -164,6 +164,9 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(runtimeSource, /launchCmuxUi/);
     assert.match(runtimeSource, /CMUX_WORKSPACE_ID/);
     assert.match(runtimeSource, /cmux-pane/);
+    assert.match(runtimeSource, /RESIDUAL_AMBIGUITY_THRESHOLD/);
+    assert.match(runtimeSource, /nextFollowupQuestion/);
+    assert.match(runtimeSource, /notifyQuestionReturn/);
     assert.match(runtimeSource, /launchMacosTerminalUi/);
     assert.match(runtimeSource, /osascript/);
     const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-runtime-'));
@@ -192,13 +195,11 @@ if (args[0] === 'list-pane-surfaces') {
   process.exit(0);
 }
 if (args[0] === 'send') {
+  if (process.env.OMG_FAKE_CMUX_LOG) fs.appendFileSync(process.env.OMG_FAKE_CMUX_LOG, JSON.stringify(args) + '\\n');
   if (process.env.OMG_FAKE_CMUX_WRITE_ANSWER !== '0') {
     const command = args[args.length - 1] || '';
     const match = command.match(/--state-path '([^']+)'/);
-    if (!match) {
-      console.error('missing state path');
-      process.exit(1);
-    }
+    if (!match) process.exit(0);
     const statePath = match[1];
     const record = JSON.parse(fs.readFileSync(statePath, 'utf8'));
     const answers = record.questions.map((question, index) => {
@@ -651,6 +652,129 @@ process.exit(0);
       assert.equal(nextPayload.current_index, 1);
       assert.equal(nextPayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
       assert.match(nextPayload.prompt, /Question 2 of 7/);
+
+      const complexStart = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--objective',
+          '계산기 웹사이트 만들어줘',
+          '--mode',
+          'sequential',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8', env: { ...process.env, TMUX: '', TMUX_PANE: '', OMG_DISABLE_CMUX_BRIDGE: '1', OMG_DISABLE_TERMINAL_BRIDGE: '1' } },
+      );
+      assert.equal(complexStart.status, 0, complexStart.stderr || complexStart.stdout);
+      const complexStartPayload = JSON.parse(complexStart.stdout) as { record_path: string };
+      let complexOutput = '';
+      for (const answer of ['1C', '2A', '3B', '4C', '5B', '6A', '7A']) {
+        const step = spawnSync(
+          process.execPath,
+          [
+            questionRuntimePath,
+            '--mode',
+            'sequential-answer',
+            '--state-path',
+            complexStartPayload.record_path,
+            '--answer',
+            answer,
+            '--json',
+          ],
+          { cwd: root, encoding: 'utf-8' },
+        );
+        assert.equal(step.status, 0, step.stderr || step.stdout);
+        complexOutput = step.stdout;
+      }
+      const complexFollowup = JSON.parse(complexOutput) as {
+        ok: boolean;
+        current_index: number;
+        progress: string;
+        question: { id: string };
+        ambiguity: { score: number; level: string };
+        answers: unknown[];
+      };
+      assert.equal(complexFollowup.ok, false);
+      assert.equal(complexFollowup.current_index, 7);
+      assert.equal(complexFollowup.progress, '8/8');
+      assert.equal(complexFollowup.question.id, 'edgeCases');
+      assert.ok(complexFollowup.ambiguity.score > 0.35);
+      assert.equal(complexFollowup.answers.length, 7);
+
+      for (const answer of ['8A,B', '9A', '10A', '11A', '12A']) {
+        const step = spawnSync(
+          process.execPath,
+          [
+            questionRuntimePath,
+            '--mode',
+            'sequential-answer',
+            '--state-path',
+            complexStartPayload.record_path,
+            '--answer',
+            answer,
+            '--json',
+          ],
+          { cwd: root, encoding: 'utf-8' },
+        );
+        assert.equal(step.status, 0, step.stderr || step.stdout);
+        complexOutput = step.stdout;
+      }
+      const complexComplete = JSON.parse(complexOutput) as {
+        ok: boolean;
+        answers: unknown[];
+        residual_ambiguity: { score: number; level: string; threshold: number };
+      };
+      assert.equal(complexComplete.ok, true);
+      assert.equal(complexComplete.answers.length, 12);
+      assert.ok(complexComplete.residual_ambiguity.score <= complexComplete.residual_ambiguity.threshold);
+      assert.equal(complexComplete.residual_ambiguity.level, 'low');
+
+      const notifyStart = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--objective',
+          '계산기 앱을 웹사이트 형태로 만들어줘',
+          '--mode',
+          'sequential',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8', env: { ...process.env, TMUX: '', TMUX_PANE: '', OMG_DISABLE_CMUX_BRIDGE: '1', OMG_DISABLE_TERMINAL_BRIDGE: '1' } },
+      );
+      assert.equal(notifyStart.status, 0, notifyStart.stderr || notifyStart.stdout);
+      const notifyStartPayload = JSON.parse(notifyStart.stdout) as { record_path: string };
+      const cmuxNotifyLog = join(cwd, 'cmux-notify.log');
+      const notifyUi = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--ui',
+          '--state-path',
+          notifyStartPayload.record_path,
+        ],
+        {
+          cwd: root,
+          encoding: 'utf-8',
+          input: ['1', '1', '1', '1', '1', '1', '1,2', ''].join('\n'),
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}:${process.env.PATH || ''}`,
+            CMUX_BUNDLED_CLI_PATH: fakeCmux,
+            OMG_QUESTION_RETURN_CMUX_WORKSPACE: 'workspace:1',
+            OMG_QUESTION_RETURN_CMUX_SURFACE: 'surface:1',
+            OMG_QUESTION_RETURN_MESSAGE: 'continue',
+            OMG_FAKE_CMUX_LOG: cmuxNotifyLog,
+          },
+        },
+      );
+      assert.equal(notifyUi.status, 0, notifyUi.stderr || notifyUi.stdout);
+      assert.match(readFileSync(cmuxNotifyLog, 'utf-8'), /"send"/);
+      assert.match(readFileSync(cmuxNotifyLog, 'utf-8'), /"surface:1"/);
+      assert.match(readFileSync(cmuxNotifyLog, 'utf-8'), /continue/);
 
       const inline = spawnSync(
         process.execPath,

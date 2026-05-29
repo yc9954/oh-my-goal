@@ -66,7 +66,7 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
   --json
 ```
 
-If status returns `ok: true`, use those `answers[]` directly and continue to gap-fill.
+If status returns `ok: true`, use those `answers[]` directly and continue to gap-fill. `ok: true` means the runtime has either driven residual ambiguity below threshold or reached an explicit user-approved stopping condition.
 
 When no interactive renderer can be opened, `auto` returns the sequential fallback with the current ambiguity score. Ask only `prompt` from the JSON result, then stop. Keep `record_path` in context. When the user answers, continue with:
 
@@ -78,7 +78,7 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
   --json
 ```
 
-If the result is still `status: "prompting"`, ask the next `prompt` and stop again. If the result has `ok: true`, use its `answers[]` as the approved intake answers.
+If the result is still `status: "prompting"`, ask the next `prompt` and stop again. The prompt may be question 8+ because the runtime appends follow-up questions when the baseline answers leave residual ambiguity above threshold. If the result has `ok: true`, use its `answers[]` and `residual_ambiguity` as the approved intake record.
 Do not fall back to a batched questionnaire unless the user explicitly asks for all questions at once. The Markdown schema block is only a last-resort diagnostic fallback.
 
 For PRD/spec/planning requests, ask about:
@@ -99,4 +99,4 @@ After the user answers:
 1. Assimilate answers into scope, non-goals, acceptance, verification, and handoff target.
 2. Rescan repo context, prior turns, and conservative defaults for residual critical gaps.
 
-Ask a second round only for surviving critical ambiguity.
+Ask another round only for surviving critical ambiguity. The runtime should keep adding focused follow-up questions until `residual_ambiguity.score` is below threshold, rather than stopping just because the baseline questionnaire ended.

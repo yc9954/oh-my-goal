@@ -14,6 +14,8 @@ import {
 
 const DEFAULT_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
 const POLL_INTERVAL_MS = 100;
+const RESIDUAL_AMBIGUITY_THRESHOLD = 0.35;
+const MAX_QUESTIONS = 12;
 const AMBIGUITY_BY_ID = {
   deliverableScope: [0.86, 'high', 'Scope changes artifacts, implementation shape, and completion evidence.'],
   acceptance: [0.9, 'high', 'Acceptance determines whether the goal can be completed safely.'],
@@ -27,6 +29,14 @@ const AMBIGUITY_BY_ID = {
   ux: [0.64, 'medium', 'UX direction affects layout and polish.'],
   workerLanes: [0.62, 'medium', 'Lane selection affects orchestration cost and evidence quality.'],
   localOptimum: [0.58, 'medium', 'Pressure level affects search breadth and critique.'],
+  completionArtifacts: [0.54, 'medium', 'Exact artifacts make completion auditable.'],
+  edgeCases: [0.52, 'medium', 'Feature-rich implementations need explicit edge-case boundaries.'],
+  visualPolishLevel: [0.46, 'medium', 'Visual direction prevents vague polish loops.'],
+  verificationCommand: [0.5, 'medium', 'A concrete verification path lowers completion risk.'],
+  dependencyPolicy: [0.44, 'medium', 'Dependency policy prevents accidental stack expansion.'],
+  dataPersistence: [0.48, 'medium', 'State persistence changes implementation and tests.'],
+  prdDecision: [0.5, 'medium', 'PRD depth depends on the decision it must support.'],
+  releaseHorizon: [0.44, 'medium', 'Planning horizon changes scope and specificity.'],
 };
 
 function safeString(value) {
@@ -148,6 +158,7 @@ function buildRecord(input, cwd) {
     multi_select: input.multi_select,
     type: input.type,
     source: input.source,
+    objective: input.objective,
     questions: input.questions,
   };
 }
@@ -329,12 +340,23 @@ function cmuxTargetFromNewPane(output, workspace) {
   return { pane, surface };
 }
 
-function buildQuestionUiCommand(statePath, cwd) {
+function envAssignment(name, value) {
+  const trimmed = safeString(value).trim();
+  return trimmed ? `${name}=${shellQuote(trimmed)}` : '';
+}
+
+function buildQuestionUiCommand(statePath, cwd, env = {}) {
   const scriptPath = fileURLToPath(import.meta.url);
+  const envPrefix = [
+    envAssignment('OMG_QUESTION_RETURN_TRANSPORT', 'state'),
+    envAssignment('OMG_QUESTION_RETURN_CMUX_WORKSPACE', env.cmuxWorkspace),
+    envAssignment('OMG_QUESTION_RETURN_CMUX_SURFACE', env.cmuxSurface),
+    envAssignment('OMG_QUESTION_RETURN_MESSAGE', env.returnMessage),
+  ].filter(Boolean).join(' ');
   return [
     `cd ${shellQuote(cwd)}`,
     `printf '\\\\033]0;Oh My Goal Intake\\\\007'`,
-    `OMG_QUESTION_RETURN_TRANSPORT=state ${shellQuote(process.execPath)} ${shellQuote(scriptPath)} --ui --state-path ${shellQuote(statePath)}`,
+    `${envPrefix} ${shellQuote(process.execPath)} ${shellQuote(scriptPath)} --ui --state-path ${shellQuote(statePath)}`,
     'exit',
   ].join('; ');
 }
@@ -363,7 +385,11 @@ function launchCmuxUi(statePath, record) {
     '--surface',
     target.surface,
     '--',
-    `${buildQuestionUiCommand(statePath, record.cwd || process.cwd())}\n`,
+    `${buildQuestionUiCommand(statePath, record.cwd || process.cwd(), {
+      cmuxWorkspace: context.workspace,
+      cmuxSurface: context.surface,
+      returnMessage: 'continue',
+    })}\n`,
   ]);
   if (send.status !== 0) throw new Error(safeString(send.stderr).trim() || 'failed to send cmux question command');
   return {
@@ -818,6 +844,10 @@ async function askQuestion(question, ask, scripted) {
   return buildAnswer(question, selections, otherText);
 }
 
+function option(label, value, description) {
+  return { label, value, ...(description ? { description } : {}) };
+}
+
 function ambiguityForQuestion(question, index) {
   const configured = AMBIGUITY_BY_ID[question.id] || [Math.max(0.42, 0.7 - index * 0.03), 'medium', 'This answer materially affects the harness defaults.'];
   return {
@@ -825,6 +855,331 @@ function ambiguityForQuestion(question, index) {
     level: configured[1],
     reason: configured[2],
   };
+}
+
+function answerEntries(record) {
+  return Array.isArray(record.answers) ? record.answers : [];
+}
+
+function answerValuesMap(answers) {
+  const map = new Map();
+  for (const entry of answers || []) {
+    if (!entry?.question_id) continue;
+    const values = Array.isArray(entry.answer?.selected_values)
+      ? entry.answer.selected_values.map((value) => safeString(value)).filter(Boolean)
+      : [];
+    if (entry.answer?.other_text) values.push(safeString(entry.answer.other_text));
+    map.set(entry.question_id, values);
+  }
+  return map;
+}
+
+function selectedValueSet(answers, questionId) {
+  return new Set(answerValuesMap(answers).get(questionId) || []);
+}
+
+function hasQuestion(record, questionId) {
+  return recordQuestions(record).some((question) => question.id === questionId);
+}
+
+function selectedAny(answers, questionId, values) {
+  const selected = selectedValueSet(answers, questionId);
+  return values.some((value) => selected.has(value));
+}
+
+function questionCount(record) {
+  return recordQuestions(record).length;
+}
+
+function isImplementationRecord(record) {
+  const ids = new Set(recordQuestions(record).map((question) => question.id));
+  return ids.has('stack') || ids.has('ux') || ids.has('outputMode');
+}
+
+function isPlanningRecord(record) {
+  const ids = new Set(recordQuestions(record).map((question) => question.id));
+  return ids.has('handoffTarget') || ids.has('audience');
+}
+
+function residualAmbiguity(record, answers) {
+  const values = answerValuesMap(answers);
+  const risks = [];
+  const add = (dimension, score, reason) => risks.push({ dimension, score, reason });
+  const has = (id) => values.has(id) && (values.get(id) || []).length > 0;
+
+  if (isImplementationRecord(record)) {
+    if (!has('deliverableScope')) add('deliverableScope', 0.86, 'Implementation scope is still unknown.');
+    else if (selectedAny(answers, 'deliverableScope', ['full-featured']) && !has('edgeCases')) add('edgeCases', 0.62, 'Full-featured scope needs explicit feature and edge-case boundaries.');
+    else add('deliverableScope', 0.18, 'Scope is concrete enough.');
+
+    if (!has('acceptance')) add('acceptance', 0.9, 'Completion behavior is still unknown.');
+    else if (selectedAny(answers, 'acceptance', ['history-memory-settings']) && (!has('edgeCases') || !has('dataPersistence'))) add('acceptance', 0.66, 'History, memory, or settings require explicit edge cases and persistence rules.');
+    else add('acceptance', 0.24, 'Completion behavior is concrete enough.');
+
+    if (!has('ux')) add('ux', 0.64, 'UX direction is still unknown.');
+    else if (selectedAny(answers, 'ux', ['domain-specific-ui', 'platform-inspired-ui']) && !has('visualPolishLevel')) add('visualPolishLevel', 0.52, 'The selected UX direction needs a concrete visual target.');
+    else add('ux', 0.2, 'UX direction is bounded.');
+
+    if (!has('verification')) add('verification', 0.82, 'Verification is still unknown.');
+    else if (!has('verificationCommand') && selectedAny(answers, 'verification', ['browser-check-only', 'tests-only'])) add('verificationCommand', 0.48, 'Verification choice needs an executable or inspectable path.');
+    else add('verification', 0.18, 'Verification path is concrete enough.');
+
+    const nonGoals = selectedValueSet(answers, 'nonGoals');
+    if (!has('nonGoals')) add('nonGoals', 0.88, 'Non-goals are still unknown.');
+    else if (!nonGoals.has('no-new-dependencies') && !has('dependencyPolicy')) add('dependencyPolicy', 0.42, 'Dependency policy is still open.');
+    else add('nonGoals', 0.2, 'Boundaries are concrete enough.');
+  } else if (isPlanningRecord(record)) {
+    if (!has('deliverableScope')) add('deliverableScope', 0.8, 'Planning scope is still unknown.');
+    else add('deliverableScope', 0.22, 'Planning scope is bounded.');
+    if (!has('handoffTarget')) add('handoffTarget', 0.78, 'Handoff target is still unknown.');
+    else add('handoffTarget', 0.24, 'Handoff target is bounded.');
+    if (!has('prdDecision')) add('prdDecision', 0.5, 'The decision the PRD must support is still unclear.');
+    else add('prdDecision', 0.18, 'PRD decision target is concrete enough.');
+    if (!has('releaseHorizon')) add('releaseHorizon', 0.42, 'Planning horizon is still vague.');
+    else add('releaseHorizon', 0.18, 'Planning horizon is concrete enough.');
+  } else {
+    if (!has('acceptance')) add('acceptance', 0.9, 'Completion evidence is still unknown.');
+    else add('acceptance', 0.26, 'Completion evidence is bounded.');
+    if (!has('workerLanes')) add('workerLanes', 0.62, 'Evidence lanes are still unknown.');
+    else add('workerLanes', 0.22, 'Evidence lanes are bounded.');
+    if (!has('verification')) add('verification', 0.82, 'Verification is still unknown.');
+    else if (!has('verificationCommand')) add('verificationCommand', 0.46, 'Verification choice needs a concrete path.');
+    else add('verification', 0.18, 'Verification path is concrete enough.');
+  }
+
+  const highest = risks.reduce((best, item) => item.score > best.score ? item : best, { dimension: 'complete', score: 0.12, reason: 'Residual ambiguity is low enough.' });
+  return {
+    score: Math.max(0.12, Math.min(0.99, highest.score)),
+    level: highest.score >= 0.75 ? 'high' : highest.score >= 0.5 ? 'medium-high' : highest.score >= RESIDUAL_AMBIGUITY_THRESHOLD ? 'medium' : 'low',
+    dimension: highest.dimension,
+    reason: highest.reason,
+    threshold: RESIDUAL_AMBIGUITY_THRESHOLD,
+    risks: risks.sort((left, right) => right.score - left.score).slice(0, 5),
+  };
+}
+
+function implementationFollowup(record, answers, residual) {
+  if (residual.score <= RESIDUAL_AMBIGUITY_THRESHOLD) return null;
+  if (questionCount(record) >= MAX_QUESTIONS) return null;
+  if (selectedAny(answers, 'deliverableScope', ['full-featured']) && !hasQuestion(record, 'edgeCases')) {
+    return {
+      id: 'edgeCases',
+      question: 'Which edge cases or secondary behaviors must be included?',
+      type: 'multi-answerable',
+      multi_select: true,
+      allow_other: true,
+      other_label: 'Other edge case',
+      options: [
+        option('Decimals, negative numbers, and chained operations', 'numeric-edge-cases', 'Important for calculator-like tools.'),
+        option('Responsive layout and keyboard accessibility', 'responsive-keyboard-accessibility', 'Important for web apps.'),
+        option('Clear error states for invalid input', 'invalid-input-states', 'Prevents silent wrong behavior.'),
+      ],
+    };
+  }
+  if (selectedAny(answers, 'acceptance', ['history-memory-settings']) && !hasQuestion(record, 'dataPersistence')) {
+    return {
+      id: 'dataPersistence',
+      question: 'How should history, memory, or settings persist?',
+      type: 'single-answerable',
+      multi_select: false,
+      allow_other: true,
+      other_label: 'Other persistence rule',
+      options: [
+        option('No persistence after refresh', 'no-refresh-persistence', 'Keep state in memory only.'),
+        option('Persist locally in the browser', 'local-browser-persistence', 'Use localStorage or equivalent.'),
+        option('Session-only persistence', 'session-only-persistence', 'Persist only while the tab/session is open.'),
+      ],
+    };
+  }
+  if (selectedAny(answers, 'ux', ['domain-specific-ui', 'platform-inspired-ui']) && !hasQuestion(record, 'visualPolishLevel')) {
+    return {
+      id: 'visualPolishLevel',
+      question: 'What visual target should constrain polish?',
+      type: 'single-answerable',
+      multi_select: false,
+      allow_other: true,
+      other_label: 'Other visual target',
+      options: [
+        option('Compact mobile-app feel', 'compact-mobile-app', 'Prioritize touch-friendly layout.'),
+        option('Desktop web tool feel', 'desktop-web-tool', 'Prioritize keyboard and workspace ergonomics.'),
+        option('Distinct branded theme', 'distinct-branded-theme', 'Use a stronger custom visual identity.'),
+      ],
+    };
+  }
+  if (!hasQuestion(record, 'verificationCommand')) {
+    return {
+      id: 'verificationCommand',
+      question: 'Which concrete verification path should the leader use?',
+      type: 'single-answerable',
+      multi_select: false,
+      allow_other: true,
+      other_label: 'Other verification path',
+      options: [
+        option('Open the page in a browser and inspect core flows', 'browser-core-flow-check', 'Best for simple static web apps.'),
+        option('Add and run a lightweight automated smoke test', 'lightweight-smoke-test', 'Use when behavior can be tested cheaply.'),
+        option('Use the project test command if one exists', 'project-test-command', 'Match existing repo checks.'),
+      ],
+    };
+  }
+  if (!selectedValueSet(answers, 'nonGoals').has('no-new-dependencies') && !hasQuestion(record, 'dependencyPolicy')) {
+    return {
+      id: 'dependencyPolicy',
+      question: 'What dependency policy should constrain implementation?',
+      type: 'single-answerable',
+      multi_select: false,
+      allow_other: true,
+      other_label: 'Other dependency policy',
+      options: [
+        option('No new dependencies', 'no-new-dependencies', 'Use platform APIs or existing packages.'),
+        option('Allow dev dependencies for tests only', 'dev-dependencies-for-tests-only', 'Keep runtime dependency surface stable.'),
+        option('Allow a small framework scaffold if useful', 'allow-small-framework-scaffold', 'Prefer speed and structure.'),
+      ],
+    };
+  }
+  return null;
+}
+
+function planningFollowup(record, answers, residual) {
+  if (residual.score <= RESIDUAL_AMBIGUITY_THRESHOLD) return null;
+  if (questionCount(record) >= MAX_QUESTIONS) return null;
+  if (!hasQuestion(record, 'prdDecision')) {
+    return {
+      id: 'prdDecision',
+      question: 'What decision should the PRD make possible?',
+      type: 'single-answerable',
+      multi_select: false,
+      allow_other: true,
+      other_label: 'Other decision',
+      options: [
+        option('Scope and acceptance alignment', 'scope-acceptance-alignment', 'Clarify what should be built.'),
+        option('Roadmap or version planning', 'roadmap-version-planning', 'Clarify sequencing and milestones.'),
+        option('Implementation handoff', 'implementation-handoff', 'Prepare tasks for builders or Codex goal execution.'),
+      ],
+    };
+  }
+  if (!hasQuestion(record, 'releaseHorizon')) {
+    return {
+      id: 'releaseHorizon',
+      question: 'What planning horizon should this target?',
+      type: 'single-answerable',
+      multi_select: false,
+      allow_other: true,
+      other_label: 'Other horizon',
+      options: [
+        option('Immediate next iteration', 'immediate-next-iteration', 'Optimize for near-term execution.'),
+        option('Next product version', 'next-product-version', 'Plan a larger coherent release.'),
+        option('Long-term product direction', 'long-term-direction', 'Emphasize strategy and constraints.'),
+      ],
+    };
+  }
+  return null;
+}
+
+function genericFollowup(record, answers, residual) {
+  if (residual.score <= RESIDUAL_AMBIGUITY_THRESHOLD) return null;
+  if (questionCount(record) >= MAX_QUESTIONS) return null;
+  if (!hasQuestion(record, 'verificationCommand')) {
+    return {
+      id: 'verificationCommand',
+      question: 'Which concrete verification path should the leader use?',
+      type: 'single-answerable',
+      multi_select: false,
+      allow_other: true,
+      other_label: 'Other verification path',
+      options: [
+        option('Inspect generated artifacts', 'inspect-generated-artifacts', 'Use direct file review.'),
+        option('Run lightweight repo checks', 'run-lightweight-repo-checks', 'Use available commands.'),
+        option('Run full project validation', 'run-full-project-validation', 'Use the strongest available gate.'),
+      ],
+    };
+  }
+  return null;
+}
+
+function nextFollowupQuestion(record, answers) {
+  const residual = residualAmbiguity(record, answers);
+  let question = null;
+  if (isImplementationRecord(record)) question = implementationFollowup(record, answers, residual);
+  else if (isPlanningRecord(record)) question = planningFollowup(record, answers, residual);
+  else question = genericFollowup(record, answers, residual);
+  return { residual, question };
+}
+
+function mergeAnswerEntries(existing, incoming) {
+  const byIndex = new Map();
+  for (const entry of existing || []) byIndex.set(entry.index, entry);
+  for (const entry of incoming || []) byIndex.set(entry.index, entry);
+  return [...byIndex.values()].sort((left, right) => left.index - right.index);
+}
+
+function pendingQuestions(record, answers) {
+  const answeredIds = new Set((answers || []).map((entry) => entry.question_id));
+  return recordQuestions(record)
+    .map((question, index) => ({ question, index }))
+    .filter((entry) => !answeredIds.has(entry.question.id));
+}
+
+async function promptForPendingAnswersWithArrows(record, existingAnswers) {
+  const pending = pendingQuestions(record, existingAnswers);
+  if (pending.length === 0) return [];
+  const pendingRecord = {
+    ...record,
+    questions: pending.map((entry) => entry.question),
+  };
+  const answers = await promptForAnswersWithArrows(pendingRecord);
+  return answers.map((entry) => ({
+    ...entry,
+    question_id: pending[entry.index].question.id,
+    index: pending[entry.index].index,
+  }));
+}
+
+async function finalizeOrExtendRecord(statePath, record, answers) {
+  const { residual, question } = nextFollowupQuestion(record, answers);
+  const now = new Date().toISOString();
+  if (question) {
+    const questions = [...recordQuestions(record), question];
+    const extended = {
+      ...record,
+      status: 'prompting',
+      updated_at: now,
+      current_index: questions.length - 1,
+      questions,
+      answers,
+      residual_ambiguity: residual,
+      followup_required: true,
+    };
+    await writeJsonAtomic(statePath, extended);
+    return { complete: false, record: extended };
+  }
+  const answered = {
+    ...record,
+    status: 'answered',
+    updated_at: now,
+    current_index: Math.max(0, recordQuestions(record).length - 1),
+    answers,
+    answer: answers[0]?.answer,
+    residual_ambiguity: residual,
+    followup_required: false,
+  };
+  await writeJsonAtomic(statePath, answered);
+  return { complete: true, record: answered };
+}
+
+function notifyQuestionReturn(_record, statePath) {
+  const workspace = safeString(process.env.OMG_QUESTION_RETURN_CMUX_WORKSPACE).trim();
+  const surface = safeString(process.env.OMG_QUESTION_RETURN_CMUX_SURFACE).trim();
+  if (!workspace || !surface) return;
+  const message = safeString(process.env.OMG_QUESTION_RETURN_MESSAGE).trim() || 'continue';
+  cmux([
+    'send',
+    '--workspace',
+    workspace,
+    '--surface',
+    surface,
+    '--',
+    `${message}\n`,
+  ]);
 }
 
 function renderSequentialPrompt(record) {
@@ -944,16 +1299,8 @@ async function runSequentialAnswer(statePath, rawAnswer) {
   ].sort((left, right) => left.index - right.index);
   const now = new Date().toISOString();
   if (index >= questions.length - 1) {
-    const answered = {
-      ...record,
-      status: 'answered',
-      updated_at: now,
-      current_index: index,
-      answers,
-      answer: answers[0]?.answer,
-    };
-    await writeJsonAtomic(statePath, answered);
-    return successPayload(answered);
+    const result = await finalizeOrExtendRecord(statePath, record, answers);
+    return result.complete ? successPayload(result.record) : sequentialPromptPayload(result.record);
   }
   const next = {
     ...record,
@@ -967,20 +1314,20 @@ async function runSequentialAnswer(statePath, rawAnswer) {
 }
 
 async function runUi(statePath) {
-  const record = await readJson(statePath);
-  const questions = Array.isArray(record.questions) ? record.questions : [];
+  let record = await readJson(statePath);
   const scriptedLines = process.stdin.isTTY ? null : readFileSync(0, 'utf-8').split(/\r?\n/);
   if (!scriptedLines && supportsInteractiveArrowUi()) {
-    const answers = await promptForAnswersWithArrows(record);
-    const now = new Date().toISOString();
-    await writeJsonAtomic(statePath, {
-      ...record,
-      status: 'answered',
-      updated_at: now,
-      answers,
-      answer: answers[0]?.answer,
-    });
-    return;
+    let answers = answerEntries(record);
+    while (true) {
+      answers = mergeAnswerEntries(answers, await promptForPendingAnswersWithArrows(record, answers));
+      const result = await finalizeOrExtendRecord(statePath, record, answers);
+      record = result.record;
+      if (result.complete) {
+        notifyQuestionReturn(record, statePath);
+        return;
+      }
+      answers = answerEntries(record);
+    }
   }
   let scriptedIndex = 0;
   const rl = scriptedLines ? null : createInterface({ input: process.stdin, output: process.stdout });
@@ -994,24 +1341,23 @@ async function runUi(statePath) {
     }
     return rl.question(prompt);
   };
-  const answers = [];
+  let answers = answerEntries(record);
   try {
     console.log('Oh My Goal Intake');
-    for (const [index, question] of questions.entries()) {
-      const answer = await askQuestion(question, ask, Boolean(scriptedLines));
-      answers.push({ question_id: question.id, index, answer });
+    while (true) {
+      for (const { question, index } of pendingQuestions(record, answers)) {
+        const answer = await askQuestion(question, ask, Boolean(scriptedLines));
+        answers = mergeAnswerEntries(answers, [{ question_id: question.id, index, answer }]);
+      }
+      const result = await finalizeOrExtendRecord(statePath, record, answers);
+      record = result.record;
+      if (result.complete) break;
+      answers = answerEntries(record);
     }
   } finally {
     rl?.close();
   }
-  const now = new Date().toISOString();
-  await writeJsonAtomic(statePath, {
-    ...record,
-    status: 'answered',
-    updated_at: now,
-    answers,
-    answer: answers[0]?.answer,
-  });
+  notifyQuestionReturn(record, statePath);
 }
 
 async function waitForAnswer(statePath, timeoutMs) {
@@ -1041,6 +1387,7 @@ function successPayload(record) {
     answer: record.answer,
     record_path: record.record_path,
     renderer: record.renderer,
+    residual_ambiguity: record.residual_ambiguity,
   };
 }
 

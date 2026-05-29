@@ -91,6 +91,7 @@ export function normalizeQuestionInput(raw) {
   const header = safeString(raw.header).trim() || undefined;
   const source = safeString(raw.source).trim() || undefined;
   const session_id = safeString(raw.session_id).trim() || undefined;
+  const objective = safeString(raw.objective).trim() || undefined;
   const rawQuestions = Array.isArray(raw.questions) ? raw.questions : undefined;
 
   const questions = rawQuestions
@@ -116,6 +117,7 @@ export function normalizeQuestionInput(raw) {
     questions,
     ...(source ? { source } : {}),
     ...(session_id ? { session_id } : {}),
+    ...(objective ? { objective } : {}),
   };
 }
 
@@ -356,6 +358,7 @@ export function buildIntakeQuestionInput(objective, options = {}) {
   return normalizeQuestionInput({
     header: options.header || 'Oh My Goal Intake',
     source: options.source || 'oh-my-goal',
+    objective: normalizedObjective,
     ...(options.sessionId ? { session_id: options.sessionId } : {}),
     questions: intakeQuestionsForObjective(normalizedObjective),
   });
