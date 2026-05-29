@@ -4,12 +4,14 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
+import { pathToFileURL } from 'node:url';
 
 const root = process.cwd();
 const skillRoot = join(root, 'plugins', 'oh-my-goal', 'skills', 'oh-my-goal');
 const skillPath = join(skillRoot, 'SKILL.md');
 const generatorPath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'create-harness.mjs');
 const questionEnginePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-engine.mjs');
+const questionCorePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'omx-question-core.mjs');
 const questionRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-runtime.mjs');
 const teamRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'team-runtime.mjs');
 
@@ -55,6 +57,7 @@ describe('oh-my-goal plugin contract', () => {
       'templates/intake-fallback.md',
       'templates/worker-packet.md',
       'references/omx-patterns.md',
+      'references/omx-port-map.md',
     ];
 
     for (const file of files) {
@@ -166,10 +169,14 @@ describe('oh-my-goal plugin contract', () => {
   });
 
   it('provides an optional question runtime with arrow UI support, sequential fallback, and structured inline answers', () => {
+    const coreSource = readFileSync(questionCorePath, 'utf-8');
     const runtimeSource = readFileSync(questionRuntimePath, 'utf-8');
-    assert.match(runtimeSource, /emitKeypressEvents/);
-    assert.match(runtimeSource, /renderQuestionWizardFrame/);
-    assert.match(runtimeSource, /↑↓ move/);
+    assert.match(coreSource, /Ported from OMX src\/question\/ui\.ts/);
+    assert.match(coreSource, /emitKeypressEvents/);
+    assert.match(coreSource, /renderQuestionWizardFrame/);
+    assert.match(coreSource, /↑↓ move/);
+    assert.match(runtimeSource, /omx-question-core\.mjs/);
+    assert.match(runtimeSource, /renderQuestionMeta/);
     assert.match(runtimeSource, /split-window/);
     assert.match(runtimeSource, /#\{pane_id\}/);
     assert.match(runtimeSource, /OMG_QUESTION_RETURN_PANE/);
@@ -835,6 +842,66 @@ process.exit(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
+  });
+
+  it('keeps the plugin question core aligned with OMX wizard semantics', async () => {
+    const core = await import(pathToFileURL(questionCorePath).href) as {
+      createInitialQuestionWizardState(record: unknown): {
+        currentQuestionIndex: number;
+        mode: 'answering' | 'review';
+        selections: Array<{ cursorIndex: number; selectedIndices: number[] }>;
+      };
+      applyQuestionWizardKey(record: unknown, state: unknown, key: { name?: string; sequence?: string }): {
+        state: {
+          currentQuestionIndex: number;
+          mode: 'answering' | 'review';
+          selections: Array<{ cursorIndex: number; selectedIndices: number[] }>;
+        };
+        submit: boolean;
+      };
+      renderQuestionWizardFrame(record: unknown, state: unknown): string;
+    };
+    const record = {
+      kind: 'omg.question/v1',
+      question_id: 'question-test',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      status: 'prompting',
+      header: 'Oh My Goal Intake',
+      questions: [
+        {
+          id: 'scope',
+          question: 'Which scope?',
+          type: 'single-answerable',
+          multi_select: false,
+          allow_other: true,
+          other_label: 'Other',
+          options: [{ label: 'First', value: 'first' }, { label: 'Second', value: 'second' }],
+        },
+        {
+          id: 'verification',
+          question: 'Which verification?',
+          type: 'single-answerable',
+          multi_select: false,
+          allow_other: false,
+          other_label: 'Other',
+          options: [{ label: 'Smoke', value: 'smoke' }],
+        },
+      ],
+    };
+
+    const initial = core.createInitialQuestionWizardState(record);
+    assert.match(core.renderQuestionWizardFrame(record, initial), /1\. First/);
+    assert.match(core.renderQuestionWizardFrame(record, initial), /↑↓ move · Enter\/→ next · ← back/);
+
+    const moved = core.applyQuestionWizardKey(record, initial, { name: 'down' });
+    assert.equal(moved.state.currentQuestionIndex, 0);
+    assert.equal(moved.state.selections[0]?.cursorIndex, 1);
+
+    const advanced = core.applyQuestionWizardKey(record, moved.state, { name: 'right' });
+    assert.equal(advanced.submit, false);
+    assert.equal(advanced.state.currentQuestionIndex, 1);
+    assert.equal(advanced.state.mode, 'answering');
   });
 
   it('ports the useful OMX Team surface into an optional plugin team runtime', () => {
