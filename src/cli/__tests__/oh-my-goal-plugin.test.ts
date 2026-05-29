@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -11,6 +11,7 @@ const skillPath = join(skillRoot, 'SKILL.md');
 const generatorPath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'create-harness.mjs');
 const questionEnginePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-engine.mjs');
 const questionRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-runtime.mjs');
+const teamRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'team-runtime.mjs');
 
 function readSkillRelative(path: string): string {
   return readFileSync(join(skillRoot, path), 'utf-8');
@@ -27,10 +28,11 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(skill, /Do not create harness files/i);
     assert.match(skill, /intake-question-engine\.mjs/);
     assert.match(skill, /intake-question-runtime\.mjs/);
+    assert.match(skill, /team-runtime\.mjs/);
     assert.match(skill, /questions\[\]/);
     assert.match(skill, /selected_values/);
     assert.match(skill, /--interview-complete/i);
-    assert.ok(skill.length < 3200, 'SKILL.md should stay a compact router');
+    assert.ok(skill.length < 3600, 'SKILL.md should stay a compact router');
   });
 
   it('splits the workflow into explicit flow, template, and reference files', () => {
@@ -75,6 +77,9 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(orchestration, /Metis/i);
     assert.match(orchestration, /Momus/i);
     assert.match(orchestration, /Oracle/i);
+    assert.match(orchestration, /team-runtime\.mjs/i);
+    assert.match(orchestration, /tmux panes/i);
+    assert.match(orchestration, /collect/i);
     assert.match(orchestration, /Local-Optimum Pressure/i);
 
     const firstTurnTemplate = readSkillRelative('templates/first-turn-response.md');
@@ -186,6 +191,105 @@ describe('oh-my-goal plugin contract', () => {
       assert.equal(payload.answers[6]?.answer.kind, 'multi');
       assert.deepEqual(payload.answers[6]?.answer.selected_values, ['no-backend-auth-persistence', 'no-new-dependencies']);
       assert.match(payload.record_path, /\.omg\/runtime\/questions\/question-/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('ports the useful OMX Team surface into an optional plugin team runtime', () => {
+    const plan = spawnSync(
+      process.execPath,
+      [
+        teamRuntimePath,
+        'plan',
+        '--objective',
+        'implement UI, write tests, update docs',
+        '--workers',
+        '3',
+        '--json',
+      ],
+      { cwd: root, encoding: 'utf-8' },
+    );
+    assert.equal(plan.status, 0, plan.stderr || plan.stdout);
+    const planPayload = JSON.parse(plan.stdout) as {
+      team: string;
+      worker_count: number;
+      workers: Array<{ worker_id: string; role: string; tasks: unknown[] }>;
+    };
+    assert.equal(planPayload.team, 'implement-ui-write-tests-updat');
+    assert.equal(planPayload.worker_count, 3);
+    assert.deepEqual(
+      planPayload.workers.map((worker) => worker.role),
+      ['implementer', 'tester', 'writer'],
+    );
+
+    const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-team-'));
+    try {
+      const launch = spawnSync(
+        process.execPath,
+        [
+          teamRuntimePath,
+          'launch',
+          '--objective',
+          'implement UI, write tests, update docs',
+          '--workers',
+          '3',
+          '--mode',
+          'dry-run',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(launch.status, 0, launch.stderr || launch.stdout);
+      const launchPayload = JSON.parse(launch.stdout) as {
+        ok: boolean;
+        status: string;
+        team: string;
+        state_root: string;
+        workers: Array<{ inbox: string; prompt: string; result: string }>;
+      };
+      assert.equal(launchPayload.ok, true);
+      assert.equal(launchPayload.status, 'planned');
+      assert.equal(launchPayload.state_root, '.omg/runtime/team/implement-ui-write-tests-updat');
+      for (const worker of launchPayload.workers) {
+        assert.ok(existsSync(join(cwd, worker.inbox)), `${worker.inbox} should exist`);
+        assert.ok(existsSync(join(cwd, worker.prompt)), `${worker.prompt} should exist`);
+        assert.match(readFileSync(join(cwd, worker.prompt), 'utf-8'), /Never call create_goal or update_goal/);
+      }
+
+      const status = spawnSync(
+        process.execPath,
+        [teamRuntimePath, 'status', '--team', launchPayload.team, '--cwd', cwd, '--json'],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(status.status, 0, status.stderr || status.stdout);
+      const statusPayload = JSON.parse(status.stdout) as {
+        workers: Array<{ status: string; result_exists: boolean }>;
+      };
+      assert.equal(statusPayload.workers.length, 3);
+      assert.equal(statusPayload.workers[0]?.status, 'planned');
+      assert.equal(statusPayload.workers[0]?.result_exists, false);
+
+      writeFileSync(
+        join(cwd, launchPayload.workers[0]!.result),
+        'Summary: implemented UI lane\nEvidence: inspected files\n',
+        'utf-8',
+      );
+      const collect = spawnSync(
+        process.execPath,
+        [teamRuntimePath, 'collect', '--team', launchPayload.team, '--cwd', cwd, '--json'],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(collect.status, 0, collect.stderr || collect.stdout);
+      const collectPayload = JSON.parse(collect.stdout) as {
+        summary: string;
+        results: Array<{ status: string }>;
+      };
+      assert.equal(collectPayload.results[0]?.status, 'reported');
+      assert.equal(collectPayload.results[1]?.status, 'pending');
+      assert.ok(existsSync(join(cwd, collectPayload.summary)));
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -24,7 +24,7 @@ This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launch
 - `flows/01-intake-gate.md` - preflight, ambiguity map, and first questionnaire rules.
 - `flows/02-artifact-generation.md` - generator usage and required harness files.
 - `flows/03-goal-handoff.md` - recommended `create_goal` prompt rules.
-- `flows/04-orchestration.md` - leader, workers, Team-style packets, and local-optimum pressure.
+- `flows/04-orchestration.md` - leader, workers, Team runtime bridge, packets, and local-optimum pressure.
 - `templates/first-turn-response.md` - required output shape for the first intake turn.
 - `templates/intake-fallback.md` - numbered prose fallback questions when structured input is unavailable.
 - `templates/worker-packet.md` - worker lane packet template.
@@ -33,6 +33,8 @@ This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launch
 ## Tool Boundary
 
 Build intake questions with `scripts/intake-question-engine.mjs`, which ports the OMX `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values` schema. When a visible question UI is useful, use `scripts/intake-question-runtime.mjs --mode auto`: it opens a tmux pane when attached and otherwise returns the same Markdown fallback block.
+
+When independent worker lanes are useful, use `scripts/team-runtime.mjs`. It ports the useful OMX Team execution surface into plugin-local state: task decomposition, worker packets, `.omg/runtime/team/<team>/` state, optional tmux worker panes, status, collection, and shutdown. Workers still must not own the Codex goal.
 
 The bundled generator may be used only after interview completion:
 

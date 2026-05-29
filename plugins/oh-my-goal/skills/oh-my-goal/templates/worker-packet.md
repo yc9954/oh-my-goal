@@ -1,6 +1,6 @@
 # Worker Packet Template
 
-Copy this packet for each worker or sequential evidence lane.
+Copy this packet for each worker or sequential evidence lane. Prefer `scripts/team-runtime.mjs launch --mode auto` when visible tmux worker panes or durable worker state are useful.
 
 ```md
 # Worker Packet
@@ -28,4 +28,16 @@ Required result:
 - Trajectory score 0-100:
 - Novelty score 0-100:
 - Recommendation: accept | reject | revise | block
+```
+
+When using the Team runtime, each worker receives the same contract in:
+
+```text
+.omg/runtime/team/<team>/workers/<worker>/prompt.md
+```
+
+The worker should write evidence to:
+
+```text
+.omg/runtime/team/<team>/workers/<worker>/result.md
 ```

@@ -1,6 +1,24 @@
 # Orchestration
 
-Use available Codex subagent, agent, or task tools only as evidence lanes. If no multi-agent runtime is available, run the same lanes sequentially and record results in the harness files.
+Use available Codex subagent, agent, or task tools only as evidence lanes. If visible worker lanes are useful, prefer the plugin Team bridge:
+
+```sh
+node <plugin-root>/scripts/team-runtime.mjs launch \
+  --objective "<bounded objective>" \
+  --workers 3 \
+  --mode auto \
+  --json
+```
+
+The Team bridge ports the useful OMX Team execution surface into plugin-local state:
+
+- task decomposition and role routing,
+- `.omg/runtime/team/<team>/config.json`,
+- worker `inbox.md`, `prompt.md`, `status.json`, and `result.md` paths,
+- optional tmux panes when launched from an attached tmux session,
+- `status`, `collect`, and `shutdown` commands for inspection and cleanup.
+
+If tmux is unavailable, `--mode auto` degrades to planned state and worker packets. Continue sequentially from those packets and record results.
 
 ## Leader And Workers
 
@@ -10,7 +28,15 @@ Use available Codex subagent, agent, or task tools only as evidence lanes. If no
 - Workers do not call `update_goal`.
 - Workers do not mark the whole mission complete.
 
-Use `templates/worker-packet.md` for each worker or sequential lane.
+Use `scripts/team-runtime.mjs plan` or `templates/worker-packet.md` for each worker or sequential lane.
+
+Inspect and collect Team work with:
+
+```sh
+node <plugin-root>/scripts/team-runtime.mjs status --team <team> --json
+node <plugin-root>/scripts/team-runtime.mjs collect --team <team> --json
+node <plugin-root>/scripts/team-runtime.mjs shutdown --team <team> --json
+```
 
 ## OMX-Style Planning Voices
 

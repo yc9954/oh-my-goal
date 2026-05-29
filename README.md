@@ -64,6 +64,18 @@ node plugins/oh-my-goal/scripts/intake-question-runtime.mjs \
 
 Inside attached tmux it opens a separate question pane and returns structured answers. Outside tmux it returns the same Markdown fallback block for Codex/native input surfaces.
 
+For visible Team-style worker lanes, use the optional OMX-derived Team runtime:
+
+```bash
+node plugins/oh-my-goal/scripts/team-runtime.mjs launch \
+  --objective "implement UI, write tests, update docs" \
+  --workers 3 \
+  --mode auto \
+  --json
+```
+
+It writes `.omg/runtime/team/<team>/` state and opens tmux worker panes when attached. Outside tmux, `--mode auto` keeps the same worker packets and reports `tmux_not_attached` so Codex can run the lanes sequentially.
+
 ```text
 .omg/harness/<slug>/
   context-index.md
@@ -105,6 +117,7 @@ codex plugin add oh-my-goal@oh-my-goal-local
 - Runs OMX-style structured deep-interview intake when scope or acceptance criteria are unclear.
 - Writes Markdown harness files under `.omg/harness/<slug>/`.
 - Sets up leader, architect, implementer, tester, critic, and replanner lane instructions.
+- Provides an optional Team runtime bridge for visible tmux worker panes plus local worker state.
 - Treats execution as trajectory search instead of premature convergence.
 - Uses optional Codex subagent/worker lanes for research, implementation, testing, critique, or replanning evidence.
 - Requires objective audit, implementation evidence, external verification, adversarial review, and basin-escape convergence checks before completion.

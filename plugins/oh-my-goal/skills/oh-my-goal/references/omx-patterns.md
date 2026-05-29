@@ -23,6 +23,7 @@ Oh My Goal preserves selected OMX behaviors without requiring the OMX runtime.
 - Keep one leader-owned Codex goal.
 - Treat workers as evidence lanes, not owners of completion.
 - Use explicit packets instead of vague delegation.
+- Use `scripts/team-runtime.mjs` for the plugin-local port of OMX Team concepts: sanitized team names, role-routed task decomposition, tmux worker panes, state files, status, result collection, and shutdown.
 - Compare trajectories before selecting a path.
 - Persist state in Markdown so work can resume from files.
 
