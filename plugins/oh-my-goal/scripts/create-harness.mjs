@@ -201,10 +201,29 @@ async function readAnswers(args) {
   const raw = args.answersFile ? await readFile(args.answersFile, 'utf-8') : args.answersJson;
   if (!raw) return {};
   const parsed = JSON.parse(raw);
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+  if (Array.isArray(parsed)) return answersArrayToObject(parsed);
+  if (!parsed || typeof parsed !== 'object') {
     throw new Error('answers JSON must be an object.');
   }
+  if (Array.isArray(parsed.answers)) return answersArrayToObject(parsed.answers);
   return parsed;
+}
+
+function answersArrayToObject(answers) {
+  const normalized = {};
+  for (const entry of answers) {
+    if (!entry || typeof entry !== 'object') continue;
+    const key = typeof entry.question_id === 'string' ? entry.question_id.trim() : '';
+    if (!key) continue;
+    const selected = Array.isArray(entry.answer?.selected_values)
+      ? entry.answer.selected_values.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+    const value = selected.length > 0
+      ? selected.join(', ')
+      : String(entry.answer?.value || entry.answer?.other_text || '').trim();
+    if (value) normalized[key] = value;
+  }
+  return normalized;
 }
 
 function routeFor(objective, answers) {

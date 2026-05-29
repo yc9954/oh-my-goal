@@ -1228,6 +1228,7 @@ process.exit(0);
               status: 'passed',
               frontierConsidered: 3,
               finalistsKept: 1,
+              candidatesCut: ['speculative polish'],
               selectedStrategyEvidence: 'selected-strategy.md reviewed',
             },
           }),
@@ -1596,6 +1597,53 @@ process.exit(0);
       assert.match(runtimeCommands, /The user should not need to run them manually/);
       assert.match(runtimeCommands, /--team 'ralpli-prd-draft'/);
       assert.match(orchestration, /The leader should auto-start the plugin Team runtime/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts raw runtime answers arrays when generating harness artifacts', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-plugin-'));
+    try {
+      const runtimePayload = {
+        ok: true,
+        answers: [
+          { question_id: 'deliverableScope', answer: { selected_values: ['polished-single-screen'] } },
+          { question_id: 'stack', answer: { selected_values: ['static-html-css-js'] } },
+          { question_id: 'ux', answer: { selected_values: ['clean-app-ui'] } },
+          { question_id: 'acceptance', answer: { selected_values: ['mouse-keyboard-core-edge-cases'] } },
+          { question_id: 'verification', answer: { selected_values: ['browser-check-plus-lightweight-tests'] } },
+          { question_id: 'outputMode', answer: { selected_values: ['harness-only'] } },
+          { question_id: 'nonGoals', answer: { selected_values: ['no-backend-auth-persistence', 'no-new-dependencies'] } },
+          { question_id: 'qualityFrontier', answer: { selected_values: ['user-workflow-polish', 'verification-depth'] } },
+          { question_id: 'qualityPruning', answer: { selected_values: ['user-visible-value-first', 'verification-reliability-first'] } },
+          { question_id: 'pruningRule', answer: { selected_values: ['maximize-quality-within-scope'] } },
+        ],
+      };
+      const result = spawnSync(
+        process.execPath,
+        [
+          generatorPath,
+          '--objective',
+          'calculator website',
+          '--cwd',
+          cwd,
+          '--slug',
+          'runtime-answer-array',
+          '--interview-complete',
+          '--answers-json',
+          JSON.stringify(runtimePayload),
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      const summary = JSON.parse(result.stdout) as { root: string; goalPromptText: string };
+      const harnessRoot = join(cwd, summary.root);
+      assert.match(summary.goalPromptText, /mouse-keyboard-core-edge-cases/);
+      assert.match(readFileSync(join(harnessRoot, 'execution-spec.md'), 'utf-8'), /user-workflow-polish; verification-depth/);
+      assert.match(readFileSync(join(harnessRoot, 'pruning-matrix.md'), 'utf-8'), /user-visible-value-first/);
+      assert.match(readFileSync(join(harnessRoot, 'deep-interview.md'), 'utf-8'), /maximize-quality-within-scope/);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

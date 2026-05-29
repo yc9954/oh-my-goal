@@ -830,6 +830,10 @@ function evaluateCompletionEvidence(evidence) {
   ) {
     missing.push('quality pruning evidence with at least three candidates considered and one finalist kept');
   }
+  const cutCount = Array.isArray(quality?.candidatesCut) ? quality.candidatesCut.filter(hasText).length : 0;
+  if (quality?.status === 'passed' && cutCount === 0 && !hasText(quality?.cutRationale)) {
+    missing.push('quality pruning cut rationale or at least one rejected candidate');
+  }
   return { missing, blockers };
 }
 
