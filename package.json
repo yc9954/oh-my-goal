@@ -17,7 +17,7 @@
     "clean:native-package-assets": "node dist/scripts/cleanup-explore-harness.js",
     "dev": "tsc --watch",
     "lint": "biome lint src",
-    "prepare": "npm run build",
+    "prepare": "node src/scripts/prepare-git-build.js",
     "prepack": "npm run build && npm run verify:native-agents && npm run sync:plugin && npm run verify:plugin-bundle && npm run clean:native-package-assets",
     "postinstall": "node src/scripts/postinstall-bootstrap.js",
     "setup": "node dist/cli/omx.js setup",
@@ -96,13 +96,13 @@
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "@modelcontextprotocol/sdk": "^1.26.0",
-    "@types/node": "^25.9.1",
-    "typescript": "^6.0.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
-    "c8": "^11.0.0"
+    "@types/node": "^25.9.1",
+    "c8": "^11.0.0",
+    "typescript": "^6.0.3"
   },
   "overrides": {
     "ajv": ">=8.18.0",
