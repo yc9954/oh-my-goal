@@ -4,7 +4,7 @@ This is the top-level workflow contract. Read this before any phase file.
 
 ## Core Rule
 
-The first `$oh-my-goal <objective>` response is intake only. Run focused preflight, start the OMX-style intake runtime in `auto` mode, and stop after either the tmux/macOS Terminal arrow-key UI returns structured answers or the sequential fallback prompt is shown. Harness generation and implementation happen only after all intake questions are answered or the user explicitly approves defaults.
+The first `$oh-my-goal <objective>` response is intake only. Run focused preflight, start the OMX-style intake runtime in `auto` mode, and stop after either an interactive tmux/macOS Terminal question window is opened, structured answers are returned, or the sequential fallback prompt is shown. Harness generation and implementation happen only after all intake questions are answered or the user explicitly approves defaults.
 
 ## Phase Router
 

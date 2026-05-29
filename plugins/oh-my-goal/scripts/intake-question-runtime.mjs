@@ -96,15 +96,17 @@ function printHelp() {
 
 Usage:
   node scripts/intake-question-runtime.mjs --objective "<objective>" [--mode auto|tmux|inline|markdown|sequential] [--json]
+  node scripts/intake-question-runtime.mjs --mode status --state-path <path> [--json]
   node scripts/intake-question-runtime.mjs --mode sequential-answer --state-path <path> --answer <selection> [--json]
   node scripts/intake-question-runtime.mjs --ui --state-path <path>
 
 Modes:
-  auto      Open tmux arrow-key UI when attached; on macOS open Terminal UI; otherwise start sequential fallback.
+  auto      Open tmux arrow-key UI when attached; on macOS open Terminal UI; return prompting state instead of blocking.
   tmux      Require tmux pane arrow-key UI and block until answered.
   inline    Ask in the current terminal; uses arrow-key UI when TTY is available.
   markdown  Print the non-interactive fallback block.
   sequential Ask one OMX-schema question at a time with ambiguity scoring.
+  status    Read a question record and return answered or prompting state.
 `);
 }
 
@@ -752,6 +754,27 @@ function sequentialPromptPayload(record) {
   };
 }
 
+function interactivePromptPayload(record) {
+  const rendererName = record.renderer?.renderer || 'interactive-renderer';
+  return {
+    ok: false,
+    renderer: rendererName,
+    status: record.status || 'prompting',
+    question_id: record.question_id,
+    record_path: record.record_path,
+    interactive: true,
+    answers: record.answers || [],
+    renderer_state: record.renderer,
+    prompt: `Oh My Goal intake is open in ${rendererName}. Answer in that window, then continue so Codex can read ${record.record_path}.`,
+  };
+}
+
+function statusPayload(record) {
+  if (record.status === 'answered') return successPayload(record);
+  if (record.renderer?.renderer && record.renderer.renderer !== 'sequential') return interactivePromptPayload(record);
+  return sequentialPromptPayload(record);
+}
+
 function extractOtherText(raw) {
   const match = raw.match(/:\s*(.+)$/);
   return match ? match[1].trim() : '';
@@ -932,17 +955,26 @@ async function runTmux(cwd, input, timeoutMs) {
   return successPayload(await waitForAnswer(statePath, timeoutMs));
 }
 
-async function runMacosTerminal(cwd, input, timeoutMs) {
+async function runInteractiveStart(cwd, input, launchRenderer) {
   const { record, statePath } = await createRecord(cwd, input);
-  const renderer = launchMacosTerminalUi(statePath, record);
+  const renderer = launchRenderer(statePath, record);
   const current = await readJson(statePath);
-  await writeJsonAtomic(statePath, {
+  const updated = {
     ...current,
     status: current.status === 'answered' ? 'answered' : 'prompting',
     updated_at: current.updated_at || new Date().toISOString(),
     renderer: current.renderer || renderer,
-  });
-  return successPayload(await waitForAnswer(statePath, timeoutMs));
+  };
+  await writeJsonAtomic(statePath, updated);
+  return statusPayload(updated);
+}
+
+async function runMacosTerminal(cwd, input) {
+  return runInteractiveStart(cwd, input, launchMacosTerminalUi);
+}
+
+async function runTmuxStart(cwd, input) {
+  return runInteractiveStart(cwd, input, launchTmuxUi);
 }
 
 function printPayload(payload, json) {
@@ -961,6 +993,12 @@ async function main() {
   if (args.ui) {
     if (!args.statePath) throw new Error('--ui requires --state-path');
     await runUi(resolve(args.statePath));
+    return;
+  }
+
+  if (args.mode === 'status') {
+    if (!args.statePath) throw new Error('--mode status requires --state-path');
+    printPayload(statusPayload(await readJson(resolve(args.statePath))), args.json);
     return;
   }
 
@@ -996,12 +1034,12 @@ async function main() {
   }
   if (args.mode === 'auto') {
     if (tmuxAvailable()) {
-      printPayload(await runTmux(cwd, input, timeoutMs), args.json);
+      printPayload(await runTmuxStart(cwd, input), args.json);
       return;
     }
     if (macosTerminalBridgeAvailable()) {
       try {
-        printPayload(await runMacosTerminal(cwd, input, timeoutMs), args.json);
+        printPayload(await runMacosTerminal(cwd, input), args.json);
       } catch (error) {
         printPayload({
           ...await runSequentialStart(cwd, input),

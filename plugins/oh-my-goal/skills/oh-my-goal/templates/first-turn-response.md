@@ -2,7 +2,7 @@
 
 Use this shape for `INTAKE_PENDING`. The wording can be adapted, but the order and stop behavior should not change.
 
-Generate intake from the OMX-style runtime in `auto` mode. In attached tmux, this opens the ↑↓/Space/Enter selector pane and returns structured answers. On macOS outside tmux, it can open a Terminal selector window. In non-interactive text surfaces, it returns the next single-question prompt.
+Generate intake from the OMX-style runtime in `auto` mode. In attached tmux, this opens the ↑↓/Space/Enter selector pane. On macOS outside tmux, it can open a Terminal selector window. In non-interactive text surfaces, it returns the next single-question prompt.
 
 ```sh
 node <plugin-root>/scripts/intake-question-runtime.mjs --objective "<objective>" --mode auto --json
@@ -32,3 +32,5 @@ Reply with one selection, e.g. 1A.
 ```
 
 Stop immediately after this block. Do not add a plan, do not say you will begin implementation, and do not run the artifact generator in the same turn.
+
+If `auto` returns an interactive prompting payload instead of a text `prompt`, say only: "Oh My Goal intake is open in <renderer>. Select answers there, then tell me to continue." Keep `record_path` for the next turn and do not show fallback choices.

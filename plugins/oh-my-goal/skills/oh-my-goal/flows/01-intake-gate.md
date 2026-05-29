@@ -55,7 +55,18 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
   --json
 ```
 
-In attached tmux, `auto` opens a separate arrow-key question pane and blocks until structured `answers[]` are returned. On macOS outside tmux, it can open a Terminal question window with the same selector. The UI ports OMX `src/question/ui.ts` behavior: ↑↓ movement, Space toggles for `multi-answerable`, Enter/→ next, and ← back. Use those answers directly and continue to gap-fill.
+In attached tmux, `auto` opens a separate arrow-key question pane. On macOS outside tmux, it can open a Terminal question window with the same selector. The UI ports OMX `src/question/ui.ts` behavior: ↑↓ movement, Space toggles for `multi-answerable`, Enter/→ next, and ← back.
+
+If `auto` returns `ok: false`, `interactive: true`, and `status: "prompting"`, tell the user to answer in that window and stop. Do not ask the text fallback question too. On the next user turn, read the record:
+
+```sh
+node <plugin-root>/scripts/intake-question-runtime.mjs \
+  --mode status \
+  --state-path "<record_path>" \
+  --json
+```
+
+If status returns `ok: true`, use those `answers[]` directly and continue to gap-fill.
 
 When no interactive renderer can be opened, `auto` returns the sequential fallback with the current ambiguity score. Ask only `prompt` from the JSON result, then stop. Keep `record_path` in context. When the user answers, continue with:
 

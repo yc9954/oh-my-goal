@@ -321,6 +321,76 @@ process.exit(0);
         assert.equal(terminalPayload.renderer?.target, 'Terminal.app');
         assert.equal(terminalPayload.answers.length, 7);
         assert.equal(terminalPayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
+
+        writeFileSync(
+          fakeOsascript,
+          `#!/usr/bin/env node
+process.exit(0);
+`,
+          'utf-8',
+        );
+        chmodSync(fakeOsascript, 0o755);
+        const terminalPrompting = spawnSync(
+          process.execPath,
+          [
+            questionRuntimePath,
+            '--objective',
+            '계산기 앱을 웹사이트 형태로 만들어줘',
+            '--mode',
+            'auto',
+            '--cwd',
+            cwd,
+            '--json',
+          ],
+          {
+            cwd: root,
+            encoding: 'utf-8',
+            env: {
+              ...process.env,
+              PATH: `${fakeBin}:${process.env.PATH || ''}`,
+              TMUX: '',
+              TMUX_PANE: '',
+            },
+          },
+        );
+        assert.equal(terminalPrompting.status, 0, terminalPrompting.stderr || terminalPrompting.stdout);
+        const promptingPayload = JSON.parse(terminalPrompting.stdout) as {
+          ok: boolean;
+          interactive?: boolean;
+          renderer: string;
+          status: string;
+          record_path: string;
+          prompt: string;
+        };
+        assert.equal(promptingPayload.ok, false);
+        assert.equal(promptingPayload.interactive, true);
+        assert.equal(promptingPayload.renderer, 'macos-terminal');
+        assert.equal(promptingPayload.status, 'prompting');
+        assert.match(promptingPayload.prompt, /Answer in that window/);
+
+        const promptingStatus = spawnSync(
+          process.execPath,
+          [
+            questionRuntimePath,
+            '--mode',
+            'status',
+            '--state-path',
+            promptingPayload.record_path,
+            '--json',
+          ],
+          { cwd: root, encoding: 'utf-8' },
+        );
+        assert.equal(promptingStatus.status, 0, promptingStatus.stderr || promptingStatus.stdout);
+        const promptingStatusPayload = JSON.parse(promptingStatus.stdout) as {
+          ok: boolean;
+          interactive?: boolean;
+          renderer: string;
+          status: string;
+        };
+        assert.equal(promptingStatusPayload.ok, false);
+        assert.equal(promptingStatusPayload.interactive, true);
+        assert.equal(promptingStatusPayload.renderer, 'macos-terminal');
+        assert.equal(promptingStatusPayload.status, 'prompting');
       }
 
       const fallback = spawnSync(
