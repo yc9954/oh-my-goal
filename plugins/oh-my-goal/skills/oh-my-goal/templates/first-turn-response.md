@@ -2,10 +2,10 @@
 
 Use this shape for `INTAKE_PENDING`. The wording can be adapted, but the order and stop behavior should not change.
 
-Generate the question list from the OMX-schema renderer:
+Generate the first question from the sequential OMX runtime:
 
 ```sh
-node <plugin-root>/scripts/intake-question-engine.mjs --objective "<objective>" --format markdown
+node <plugin-root>/scripts/intake-question-runtime.mjs --objective "<objective>" --mode sequential --json
 ```
 
 ```md
@@ -16,20 +16,19 @@ Preflight:
 - <one relevant constraint or default>
 - <one unknown that needs user input>
 
-Before I create harness files or implementation files, answer these in one reply:
+Before I create harness files or implementation files, answer this OMX intake question:
 
-OMX question schema fallback:
-- source: oh-my-goal
-- contract: `questions[]` with `single-answerable` / `multi-answerable`; reply with selected option keys.
-- answer shape: `answers[] -> { question_id, answer: { selected_values: [...] } }`.
+Question 1 of <n>
+Ambiguity: <score> (<level>) - <reason>
+[single-answerable] id=<id> multi_select=false
+question: <question>
 
-questions[]:
-1. [single-answerable] id=<id> multi_select=false
-   question: <question>
-   A) label="<label>" value="<value>"
-   B) label="<label>" value="<value>"
+A) <label>
+B) <label>
+C) <label>
+D) Other
 
-Reply with OMX selections, for example: 1B 2A 3A 4B 5C 6A.
+Reply with one selection, e.g. 1A.
 ```
 
 Stop immediately after this block. Do not add a plan, do not say you will begin implementation, and do not run the artifact generator in the same turn.

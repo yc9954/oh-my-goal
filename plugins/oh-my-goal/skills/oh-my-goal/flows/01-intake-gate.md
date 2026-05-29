@@ -30,7 +30,7 @@ Do not show a long analysis dump. Ask only the independent high-leverage questio
 
 Path rule: `<plugin-root>` is two directories above this skill directory. Use `<plugin-root>/scripts/intake-question-engine.mjs`, not `skills/oh-my-goal/scripts/intake-question-engine.mjs`.
 
-Build the question round with the bundled OMX-derived question engine:
+Build the question payload with the bundled OMX-derived question engine:
 
 ```sh
 node <plugin-root>/scripts/intake-question-engine.mjs \
@@ -46,7 +46,28 @@ The payload must use canonical OMX question fields:
 - `allow_other` only when one user-supplied option is genuinely useful,
 - `answers[]` and `answers[i].answer.selected_values` as the source of truth after the answer.
 
-For a visible blocking UI, prefer the bundled runtime:
+For the user-facing intake, prefer the bundled sequential runtime. It asks one question at a time, persists state, and displays an ambiguity score for the current question:
+
+```sh
+node <plugin-root>/scripts/intake-question-runtime.mjs \
+  --objective "<objective>" \
+  --mode sequential \
+  --json
+```
+
+Ask only `prompt` from the JSON result, then stop. Keep `record_path` in context. When the user answers, continue with:
+
+```sh
+node <plugin-root>/scripts/intake-question-runtime.mjs \
+  --mode sequential-answer \
+  --state-path "<record_path>" \
+  --answer "<user selection>" \
+  --json
+```
+
+If the result is still `status: "prompting"`, ask the next `prompt` and stop again. If the result has `ok: true`, use its `answers[]` as the approved intake answers.
+
+For an attached tmux blocking UI, the bundled runtime can still collect all answers in a pane:
 
 ```sh
 node <plugin-root>/scripts/intake-question-runtime.mjs \
@@ -55,7 +76,7 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
   --json
 ```
 
-In attached tmux, it opens a separate question pane and returns structured answers. Outside tmux, use native structured input when available. When structured input is unavailable, render the same payload with `--format markdown`, use the schema-rendered `templates/intake-fallback.md` shape, and wait for one user reply. Do not replace it with a hand-written prose questionnaire.
+In attached tmux, it opens a separate question pane and returns structured answers. Outside tmux, do not fall back to a batched questionnaire unless the user explicitly asks for all questions at once. Use sequential mode first. The Markdown schema block is only a last-resort diagnostic fallback.
 
 For PRD/spec/planning requests, ask about:
 

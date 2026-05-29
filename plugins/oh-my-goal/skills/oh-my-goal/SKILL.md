@@ -34,7 +34,7 @@ This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launch
 
 Resolve `<plugin-root>` as the directory two levels above this skill directory. From `skills/oh-my-goal/SKILL.md`, the scripts live at `../../scripts/*.mjs`. Do not look for scripts under `skills/oh-my-goal/scripts/`.
 
-Build intake questions with `scripts/intake-question-engine.mjs`, which ports the OMX `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values` schema. When a visible question UI is useful, use `scripts/intake-question-runtime.mjs --mode auto`: it opens a tmux pane when attached and otherwise returns the same Markdown fallback block.
+Build intake questions with `scripts/intake-question-engine.mjs`, which ports the OMX `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values` schema. For the first user-facing turn, use `scripts/intake-question-runtime.mjs --mode sequential --json`: it asks one question at a time, persists `record_path`, and shows an ambiguity score. Continue each user answer with `--mode sequential-answer --state-path <record_path> --answer <selection> --json` until the runtime returns `ok: true`.
 
 When independent worker lanes are useful, use `scripts/team-runtime.mjs`. It ports the useful OMX Team execution surface into plugin-local state: task decomposition, worker packets, `.omg/runtime/team/<team>/` state, optional tmux worker panes, status, collection, and shutdown. Workers still must not own the Codex goal.
 

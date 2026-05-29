@@ -28,6 +28,9 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(skill, /Do not create harness files/i);
     assert.match(skill, /intake-question-engine\.mjs/);
     assert.match(skill, /intake-question-runtime\.mjs/);
+    assert.match(skill, /--mode sequential/);
+    assert.match(skill, /sequential-answer/);
+    assert.match(skill, /ambiguity score/i);
     assert.match(skill, /team-runtime\.mjs/);
     assert.match(skill, /runtime-commands\.md/);
     assert.match(skill, /two levels above this skill directory/i);
@@ -59,6 +62,7 @@ describe('oh-my-goal plugin contract', () => {
     const topFlow = readSkillRelative('FLOW.md');
     assert.match(topFlow, /Phase Router/i);
     assert.match(topFlow, /INTAKE_PENDING/);
+    assert.match(topFlow, /one question at a time/i);
     assert.match(topFlow, /create files, run harness generator, code, create goal/i);
     assert.match(topFlow, /templates\/first-turn-response\.md/);
 
@@ -75,6 +79,8 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(intake, /questions\[\]/i);
     assert.match(intake, /multi-answerable/i);
     assert.match(intake, /selected_values/i);
+    assert.match(intake, /sequential-answer/i);
+    assert.match(intake, /ambiguity score/i);
     assert.match(intake, /Gap-Fill Passes/i);
 
     const orchestration = readSkillRelative('flows/04-orchestration.md');
@@ -90,7 +96,8 @@ describe('oh-my-goal plugin contract', () => {
     const firstTurnTemplate = readSkillRelative('templates/first-turn-response.md');
     assert.match(firstTurnTemplate, /Stop immediately/i);
     assert.match(firstTurnTemplate, /Do not add a plan/i);
-    assert.match(firstTurnTemplate, /OMX question schema fallback/i);
+    assert.match(firstTurnTemplate, /Question 1 of <n>/i);
+    assert.match(firstTurnTemplate, /Ambiguity: <score>/i);
   });
 
   it('ports the OMX question schema into the plugin intake question engine', () => {
@@ -176,6 +183,63 @@ describe('oh-my-goal plugin contract', () => {
 
     const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-runtime-'));
     try {
+      const sequential = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--objective',
+          '계산기 앱을 웹사이트 형태로 만들어줘',
+          '--mode',
+          'sequential',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8', env: { ...process.env, TMUX: '', TMUX_PANE: '' } },
+      );
+      assert.equal(sequential.status, 0, sequential.stderr || sequential.stdout);
+      const sequentialPayload = JSON.parse(sequential.stdout) as {
+        ok: boolean;
+        status: string;
+        record_path: string;
+        current_index: number;
+        ambiguity: { score: number; level: string };
+        prompt: string;
+      };
+      assert.equal(sequentialPayload.ok, false);
+      assert.equal(sequentialPayload.status, 'prompting');
+      assert.equal(sequentialPayload.current_index, 0);
+      assert.equal(sequentialPayload.ambiguity.score, 0.86);
+      assert.match(sequentialPayload.prompt, /Question 1 of 7/);
+      assert.match(sequentialPayload.prompt, /Ambiguity: 0\.86 \(high\)/);
+      assert.match(sequentialPayload.prompt, /\[single-answerable\] id=deliverableScope multi_select=false/);
+
+      const nextSequential = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--mode',
+          'sequential-answer',
+          '--state-path',
+          sequentialPayload.record_path,
+          '--answer',
+          '1A',
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(nextSequential.status, 0, nextSequential.stderr || nextSequential.stdout);
+      const nextPayload = JSON.parse(nextSequential.stdout) as {
+        ok: boolean;
+        current_index: number;
+        answers: Array<{ answer: { selected_values: string[] } }>;
+        prompt: string;
+      };
+      assert.equal(nextPayload.ok, false);
+      assert.equal(nextPayload.current_index, 1);
+      assert.equal(nextPayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
+      assert.match(nextPayload.prompt, /Question 2 of 7/);
+
       const inline = spawnSync(
         process.execPath,
         [

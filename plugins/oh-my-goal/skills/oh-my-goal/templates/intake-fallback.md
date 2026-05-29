@@ -1,6 +1,6 @@
 # Intake Fallback Template
 
-Use this when structured input is unavailable. The block must still render the OMX `questions[]` schema, not an invented prose survey. Ask the block, then stop and wait.
+Use this only when the sequential runtime is unavailable. Normally ask one sequential runtime `prompt` at a time. If this fallback is needed, the block must still render the OMX `questions[]` schema, not an invented prose survey. Ask the block, then stop and wait.
 
 ```text
 Before I create harness files or implementation files, answer these in one reply:
