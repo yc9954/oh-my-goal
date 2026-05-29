@@ -90,6 +90,7 @@ describe('oh-my-goal plugin contract', () => {
     const firstTurnTemplate = readSkillRelative('templates/first-turn-response.md');
     assert.match(firstTurnTemplate, /Stop immediately/i);
     assert.match(firstTurnTemplate, /Do not add a plan/i);
+    assert.match(firstTurnTemplate, /OMX question schema fallback/i);
   });
 
   it('ports the OMX question schema into the plugin intake question engine', () => {
@@ -118,6 +119,19 @@ describe('oh-my-goal plugin contract', () => {
     assert.equal(payload.questions[6]?.type, 'multi-answerable');
     assert.equal(payload.questions[6]?.multi_select, true);
     assert.equal(payload.questions[6]?.options[1]?.value, 'no-new-dependencies');
+
+    const markdownResult = spawnSync(
+      process.execPath,
+      [questionEnginePath, '--objective', '계산기 앱을 웹사이트 형태로 만들어줘', '--format', 'markdown'],
+      { cwd: root, encoding: 'utf-8' },
+    );
+    assert.equal(markdownResult.status, 0, markdownResult.stderr || markdownResult.stdout);
+    assert.match(markdownResult.stdout, /OMX question schema fallback/);
+    assert.match(markdownResult.stdout, /questions\[\]/);
+    assert.match(markdownResult.stdout, /\[single-answerable\] id=deliverableScope multi_select=false/);
+    assert.match(markdownResult.stdout, /label="Polished single-screen implementation" value="polished-single-screen"/);
+    assert.match(markdownResult.stdout, /\[multi-answerable\] id=nonGoals multi_select=true/);
+    assert.match(markdownResult.stdout, /answers\[\] -> \{ question_id, answer: \{ selected_values: \[\.\.\.\] \} \}/);
 
     const commandResult = spawnSync(
       process.execPath,
@@ -339,9 +353,12 @@ describe('oh-my-goal plugin contract', () => {
       assert.match(result.stdout, /Which implementation scope should this target/i);
       assert.match(result.stdout, /Which stack should be used/i);
       assert.match(result.stdout, /What should happen after intake/i);
+      assert.match(result.stdout, /OMX question schema fallback/i);
+      assert.match(result.stdout, /\[single-answerable\] id=deliverableScope multi_select=false/);
+      assert.match(result.stdout, /\[multi-answerable\] id=nonGoals multi_select=true/);
       assert.match(result.stdout, /1A 2A 3A 4A 5A 6A 7A/);
       assert.doesNotMatch(result.stdout, /^8\./m);
-      assert.match(result.stdout, /Reply with choices/i);
+      assert.match(result.stdout, /Reply with OMX selections/i);
       assert.doesNotMatch(result.stdout, /oh-my-goal harness:/);
     } finally {
       rmSync(cwd, { recursive: true, force: true });

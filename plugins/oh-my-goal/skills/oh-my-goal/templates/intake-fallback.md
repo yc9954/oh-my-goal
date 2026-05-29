@@ -1,27 +1,33 @@
 # Intake Fallback Template
 
-Use this when structured input is unavailable. Ask the block, then stop and wait.
+Use this when structured input is unavailable. The block must still render the OMX `questions[]` schema, not an invented prose survey. Ask the block, then stop and wait.
 
 ```text
 Before I create harness files or implementation files, answer these in one reply:
 
-1. Scope: A minimal / B polished / C full-featured
-2. Stack: A static HTML/CSS/JS / B React/Vite / C match existing repo
-3. UX: A clean app / B platform-inspired / C domain-specific
-4. Functionality: A basic / B keyboard + edge cases / C history/settings
-5. Verification: A browser check / B tests / C both
-6. Output: A implement now / B harness only / C spec first
+OMX question schema fallback:
+- source: oh-my-goal
+- contract: questions[] with single-answerable / multi-answerable; reply with selected option keys.
+- answer shape: answers[] -> { question_id, answer: { selected_values: [...] } }.
 
-Reply like: 1B 2A 3A 4B 5C 6A
+questions[]:
+1. [single-answerable] id=deliverableScope multi_select=false
+   question: Which implementation scope should this target?
+   A) label="Polished single-screen implementation" value="polished-single-screen"
+   B) label="Minimal working implementation" value="minimal-working"
+   C) label="Full-featured implementation" value="full-featured"
+   D) other_label="Other" value="<free text>"
+
+Reply with OMX selections, for example: 1A 2A 3A 4A 5A 6A 7A; multi-select example: 7A,B.
 ```
 
-For PRD/spec/planning requests, adapt the labels:
+For PRD/spec/planning requests, use the same schema-rendered shape with planning question IDs:
 
 ```text
-1. Scope: A next-version PRD / B current-product PRD / C single-feature PRD
-2. Reader: A builder or PM / B stakeholder / C Codex goal executor
-3. Source: A repo plus answers / B repo only / C repo plus research
-4. Non-goals: A no implementation yet / B no broad refactor / C no new dependencies
-5. Verification: A Markdown inspection / B repo checks / C stakeholder review
-6. Handoff: A goal prompt / B PRD only / C implementation after approval
+1. [single-answerable] id=deliverableScope multi_select=false
+   question: Which deliverable scope should this target?
+   A) label="Next-version PRD" value="next-version-prd"
+   B) label="Current-product PRD" value="current-product-prd"
+   C) label="Single-feature PRD" value="single-feature-prd"
+   D) other_label="Other" value="<free text>"
 ```

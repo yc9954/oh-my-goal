@@ -55,7 +55,7 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
   --json
 ```
 
-In attached tmux, it opens a separate question pane and returns structured answers. Outside tmux, use native structured input when available. When structured input is unavailable, render the same payload with `--format markdown`, use `templates/intake-fallback.md` as the output shape, and wait for one user reply.
+In attached tmux, it opens a separate question pane and returns structured answers. Outside tmux, use native structured input when available. When structured input is unavailable, render the same payload with `--format markdown`, use the schema-rendered `templates/intake-fallback.md` shape, and wait for one user reply. Do not replace it with a hand-written prose questionnaire.
 
 For PRD/spec/planning requests, ask about:
 

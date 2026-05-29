@@ -369,17 +369,30 @@ export function renderQuestionInputMarkdown(input) {
   const lines = [
     'Before I create harness files or implementation files, answer these in one reply.',
     '',
+    'OMX question schema fallback:',
+    `- source: ${input.source || 'oh-my-goal'}`,
+    '- contract: `questions[]` with `single-answerable` / `multi-answerable`; reply with selected option keys.',
+    '- answer shape: `answers[] -> { question_id, answer: { selected_values: [...] } }`.',
+    '',
+    'questions[]:',
   ];
   for (const [questionIndex, question] of input.questions.entries()) {
-    lines.push(`${questionIndex + 1}. ${question.question}`);
+    lines.push(
+      `${questionIndex + 1}. [${question.type}] id=${question.id} multi_select=${question.multi_select ? 'true' : 'false'}`,
+      `   question: ${question.question}`,
+    );
     for (const [optionIndex, item] of question.options.entries()) {
       const description = item.description ? ` - ${item.description}` : '';
-      lines.push(`   ${alphaLabel(optionIndex)}) ${item.label}${description}`);
+      lines.push(`   ${alphaLabel(optionIndex)}) label="${item.label}" value="${item.value}"${description}`);
     }
-    if (question.allow_other) lines.push(`   ${alphaLabel(question.options.length)}) ${question.other_label}`);
+    if (question.allow_other) {
+      lines.push(`   ${alphaLabel(question.options.length)}) other_label="${question.other_label}" value="<free text>"`);
+    }
   }
   const example = input.questions.map((_, index) => `${index + 1}A`).join(' ');
-  lines.push('', `Reply with choices or short answers, for example: ${example}.`);
+  const multi = input.questions.find((question, index) => question.multi_select && index > 0);
+  const multiExample = multi ? `; multi-select example: ${input.questions.indexOf(multi) + 1}A,B` : '';
+  lines.push('', `Reply with OMX selections, for example: ${example}${multiExample}.`);
   return lines.join('\n');
 }
 
