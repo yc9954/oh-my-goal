@@ -25,6 +25,7 @@ The harness root is `.omg/harness/<slug>/` and must include:
 - `ambiguity-map.md` - ambiguity dimensions, defaults, and critical gaps.
 - `intake-questionnaire.md` - structured questions, choices, and recorded answers.
 - `deep-interview.md` - decisions, assumptions, and unresolved questions.
+- `execution-spec.md` - detailed requirements, UX/technical constraints, verification plan, and agent work breakdown.
 - `goal-prompt.md` - final recommended Codex `create_goal` objective.
 - `harness.md` - execution lifecycle and state contract.
 - `runtime-commands.md` - leader-owned auto-start commands for Team runtime, status, collection, and shutdown.
@@ -41,4 +42,4 @@ The harness root is `.omg/harness/<slug>/` and must include:
 
 If the script is unavailable, create the same files manually. Preserve the same state contract: one leader-owned Codex goal, worker lanes as evidence producers, trajectory comparison before commitment, and completion only after the gate passes.
 
-After generation, report the harness path and print the exact recommended Codex goal prompt from `goal-prompt.md` or `goalPromptText`. Do not only summarize it. If the selected output mode is harness-only, PRD-only, goal-prompt-only, or implementation-after-approval, stop after the handoff and do not ask whether to implement now. Do not ask the user to run `team-runtime.mjs` manually; the generated goal prompt and `runtime-commands.md` make the leader auto-start it during execution when lane separation is useful. Do not start execution unless the user already requested execution in this turn or explicitly approves the handoff.
+After generation, report the harness path and print the exact recommended Codex goal prompt from `goal-prompt.md` or `goalPromptText`. Do not only summarize it. Mention `execution-spec.md` as the detailed spec the goal should read before implementation. If the selected output mode is harness-only, PRD-only, goal-prompt-only, or implementation-after-approval, stop after the handoff and do not ask whether to implement now. Do not ask the user to run `team-runtime.mjs` manually; the generated goal prompt and `runtime-commands.md` make the leader auto-start it during execution when lane separation is useful. Do not start execution unless the user already requested execution in this turn or explicitly approves the handoff.

@@ -88,6 +88,7 @@ describe('oh-my-goal plugin contract', () => {
     const generation = readSkillRelative('flows/02-artifact-generation.md');
     assert.match(generation, /exact recommended Codex goal prompt/i);
     assert.match(generation, /Do not only summarize it/i);
+    assert.match(generation, /execution-spec\.md/);
     assert.match(generation, /do not ask whether to implement now/i);
 
     const handoff = readSkillRelative('flows/03-goal-handoff.md');
@@ -102,6 +103,8 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(orchestration, /team-runtime\.mjs/i);
     assert.match(orchestration, /not `skills\/oh-my-goal\/scripts\/team-runtime\.mjs`/);
     assert.match(orchestration, /tmux panes/i);
+    assert.match(orchestration, /cmux tree/);
+    assert.match(orchestration, /read-screen/);
     assert.match(orchestration, /collect/i);
     assert.match(orchestration, /Local-Optimum Pressure/i);
 
@@ -1013,6 +1016,8 @@ process.exit(0);
       assert.equal(cmuxLaunchPayload.workers[0]?.surface_id, 'surface:91');
       assert.equal(cmuxLaunchPayload.workers[1]?.pane_id, 'pane:92');
       assert.match(readFileSync(cmuxLog, 'utf-8'), /"new-pane"/);
+      assert.match(readFileSync(cmuxLog, 'utf-8'), /"rename-tab"/);
+      assert.match(readFileSync(cmuxLog, 'utf-8'), /OMG worker-1/);
       assert.match(readFileSync(cmuxLog, 'utf-8'), /"send"/);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -1104,10 +1109,12 @@ process.exit(0);
       assert.match(summary.goalPromptText, /Use the Oh My Goal harness artifacts/);
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/ambiguity-map.md'));
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/intake-questionnaire.md'));
+      assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/execution-spec.md'));
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/runtime-commands.md'));
 
       const harnessRoot = join(cwd, summary.root);
       const goalPrompt = readFileSync(join(harnessRoot, 'goal-prompt.md'), 'utf-8');
+      const executionSpec = readFileSync(join(harnessRoot, 'execution-spec.md'), 'utf-8');
       const ambiguityMap = readFileSync(join(harnessRoot, 'ambiguity-map.md'), 'utf-8');
       const questionnaire = readFileSync(join(harnessRoot, 'intake-questionnaire.md'), 'utf-8');
       const runtimeCommands = readFileSync(join(harnessRoot, 'runtime-commands.md'), 'utf-8');
@@ -1119,10 +1126,16 @@ process.exit(0);
       assert.match(goalPrompt, /Do not ask the user to run Team runtime manually/);
       assert.match(goalPrompt, /Auto-start command: node '.+team-runtime\.mjs' launch/);
       assert.match(goalPrompt, /tmux_not_attached/);
+      assert.match(executionSpec, /# Execution Spec/);
+      assert.match(executionSpec, /## Verification Plan/);
+      assert.match(executionSpec, /## Agent Work Breakdown/);
       assert.match(ambiguityMap, /OMX deep-interview pattern/i);
       assert.match(questionnaire, /Batch independent high-leverage questions/i);
       assert.match(questionnaire, /Gap-fill contract/i);
       assert.match(runtimeCommands, /Team Runtime Auto-Start/);
+      assert.match(runtimeCommands, /CMUX Visibility/);
+      assert.match(runtimeCommands, /cmux tree/);
+      assert.match(runtimeCommands, /read-screen/);
       assert.match(runtimeCommands, /The user should not need to run them manually/);
       assert.match(runtimeCommands, /--team 'ralpli-prd-draft'/);
       assert.match(orchestration, /The leader should auto-start the plugin Team runtime/);

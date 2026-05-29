@@ -500,7 +500,9 @@ function buildWorkerCommand({ cwd, agent, worker, teamName }) {
   const workerDir = join(cwd, worker.worker_dir);
   const resultPath = join(cwd, worker.result);
   const agentCommand = safeString(agent).trim() || 'codex';
+  const title = `OMG ${worker.worker_id} ${worker.role}`;
   const promptArg = `"$(cat ${shellQuote(promptPath)})"`;
+  const banner = `printf '\\\\033]0;%s\\\\007Oh My Goal %s (%s)\\nPacket: %s\\nResult: %s\\n\\n' ${shellQuote(title)} ${shellQuote(worker.worker_id)} ${shellQuote(worker.role)} ${shellQuote(promptPath)} ${shellQuote(resultPath)}`;
   const runAgent = agentCommand === 'shell'
     ? `printf 'Oh My Goal worker ready. Read %s and write %s\\n' ${shellQuote(promptPath)} ${shellQuote(resultPath)}; exec \${SHELL:-sh}`
     : `if command -v ${shellQuote(agentCommand)} >/dev/null 2>&1; then ${shellQuote(agentCommand)} ${promptArg}; else printf 'Agent ${agentCommand} not found. Read %s and write %s\\n' ${shellQuote(promptPath)} ${shellQuote(resultPath)}; exec \${SHELL:-sh}; fi`;
@@ -510,6 +512,7 @@ function buildWorkerCommand({ cwd, agent, worker, teamName }) {
     `export OMG_TEAM_WORKER=${shellQuote(worker.worker_id)}`,
     `export OMG_TEAM_WORKER_DIR=${shellQuote(workerDir)}`,
     `export OMG_TEAM_RESULT_PATH=${shellQuote(resultPath)}`,
+    banner,
     runAgent,
   ].join(' && ');
 }
@@ -592,6 +595,15 @@ async function launchCmuxWorkers(cwd, root, config) {
     const target = cmuxTargetFromNewPane(`${result.stdout}\n${result.stderr}`, context.workspace);
     if (!target.surface) throw new Error(`failed to resolve cmux surface for ${worker.worker_id}`);
     const command = `${buildWorkerCommand({ cwd, agent: config.agent, worker, teamName: config.team })}\n`;
+    const title = `OMG ${worker.worker_id} ${worker.role}`;
+    cmux([
+      'rename-tab',
+      '--workspace',
+      context.workspace,
+      '--surface',
+      target.surface,
+      title,
+    ]);
     const send = cmux([
       'send',
       '--workspace',
@@ -608,6 +620,7 @@ async function launchCmuxWorkers(cwd, root, config) {
       ...worker,
       pane_id: target.pane || null,
       surface_id: target.surface,
+      title,
       renderer: 'cmux-pane',
     };
     workers.push(launchedWorker);
@@ -615,6 +628,7 @@ async function launchCmuxWorkers(cwd, root, config) {
       status: 'launched',
       pane_id: launchedWorker.pane_id,
       surface_id: launchedWorker.surface_id,
+      title: launchedWorker.title,
       renderer: launchedWorker.renderer,
     });
   }
@@ -623,6 +637,7 @@ async function launchCmuxWorkers(cwd, root, config) {
     status: 'launched',
     leader_surface_id: context.surface || null,
     cmux_workspace: context.workspace,
+    cmux_tree_command: `cmux tree --workspace ${context.workspace}`,
     workers,
     updated_at: new Date().toISOString(),
   };
@@ -769,6 +784,7 @@ async function commandStatus(args) {
       role: worker.role,
       pane_id: worker.pane_id || status.pane_id || null,
       surface_id: worker.surface_id || status.surface_id || null,
+      title: worker.title || status.title || null,
       renderer: worker.renderer || status.renderer || null,
       status: status.status || 'unknown',
       result_exists: existsSync(resultPath),

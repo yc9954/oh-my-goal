@@ -16,9 +16,19 @@ The Team bridge ports the useful OMX Team execution surface into plugin-local st
 - `.omg/runtime/team/<team>/config.json`,
 - worker `inbox.md`, `prompt.md`, `status.json`, and `result.md` paths,
 - optional cmux/tmux panes when launched from an attached interactive session,
+- cmux-visible surfaces renamed by worker id and role when cmux is available,
 - `status`, `collect`, and `shutdown` commands for inspection and cleanup.
 
 If cmux/tmux is unavailable, `--mode auto` degrades to planned state and worker packets. Continue sequentially from those packets and record results.
+
+When cmux is available, inspect visible worker lanes with:
+
+```sh
+cmux tree --workspace "$CMUX_WORKSPACE_ID"
+cmux read-screen --workspace "$CMUX_WORKSPACE_ID" --surface <surface:id> --lines 80
+```
+
+Use cmux screen reads for observation only. Worker `result.md` files remain the durable evidence source.
 
 ## Leader And Workers
 
