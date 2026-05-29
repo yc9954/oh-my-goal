@@ -25,7 +25,7 @@ type NpmPackDryRunResult = {
 };
 
 describe('package bin contract', () => {
-  it('declares omx and omg with explicit relative bin paths and avoids packaging platform-specific native binaries', () => {
+  it('declares goal product bins without clobbering omx and avoids packaging platform-specific native binaries', () => {
     const packageJsonPath = join(process.cwd(), 'package.json');
     const pkg = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as PackageJson;
     const binaryName = platform() === 'win32' ? 'omx-sparkshell.exe' : 'omx-sparkshell';
@@ -37,7 +37,7 @@ describe('package bin contract', () => {
       binaryName,
     );
 
-    assert.deepEqual(pkg.bin, { 'oh-my-goal': 'dist/cli/omg.js', omx: 'dist/cli/omx.js', omg: 'dist/cli/omg.js' });
+    assert.deepEqual(pkg.bin, { 'oh-my-goal': 'dist/cli/omg.js', omg: 'dist/cli/omg.js' });
     assert.equal(pkg.scripts?.['build:explore'], 'cargo build -p omx-explore-harness');
     assert.equal(pkg.scripts?.['build:explore:release'], 'node dist/scripts/build-explore-harness.js');
     assert.equal(pkg.scripts?.['build:full'], 'npm run build && npm run build:explore:release && npm run build:sparkshell && npm run build:api');

@@ -6,7 +6,6 @@
   "main": "dist/index.js",
   "bin": {
     "oh-my-goal": "dist/cli/omg.js",
-    "omx": "dist/cli/omx.js",
     "omg": "dist/cli/omg.js"
   },
   "scripts": {

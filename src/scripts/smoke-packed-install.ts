@@ -18,13 +18,6 @@ export {
   resolveReusableNodeModulesSource,
 } from '../utils/repo-deps.js';
 
-export const PACKED_INSTALL_SMOKE_CORE_COMMANDS = [
-  ['--help'],
-  ['version'],
-  ['api', '--help'],
-  ['sparkshell', '--help'],
-] as const;
-
 export const PACKED_INSTALL_SMOKE_GOAL_COMMANDS = [
   ['--help'],
   ['version'],
@@ -44,7 +37,7 @@ function usage(): string {
   return [
     'Usage: node scripts/smoke-packed-install.mjs',
     '',
-    'Creates an npm tarball, installs it into an isolated prefix, and smoke tests the installed omx/omg CLIs.',
+    'Creates an npm tarball, installs it into an isolated prefix, and smoke tests the installed omg/oh-my-goal CLIs.',
     'Release smoke stays intentionally minimal: install + boot + 1-2 core commands only.',
   ].join('\n');
 }
@@ -252,10 +245,6 @@ async function main(): Promise<void> {
 
     run('npm', ['install', '-g', tarballPath, '--prefix', prefixDir], { cwd: repoRoot });
 
-    const omxPath = join(prefixDir, process.platform === 'win32' ? '' : 'bin', npmBinName('omx'));
-    for (const argv of PACKED_INSTALL_SMOKE_CORE_COMMANDS) {
-      run(omxPath, argv, { cwd: repoRoot });
-    }
     const omgPath = join(prefixDir, process.platform === 'win32' ? '' : 'bin', npmBinName('omg'));
     for (const argv of PACKED_INSTALL_SMOKE_GOAL_COMMANDS) {
       run(omgPath, argv, { cwd: repoRoot });

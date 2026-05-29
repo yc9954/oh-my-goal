@@ -9,30 +9,12 @@ import {
   hasUsableNodeModules,
   buildNativeHookSmokePayload,
   PACKED_INSTALL_NATIVE_HOOK_SMOKE_EVENTS,
-  PACKED_INSTALL_SMOKE_CORE_COMMANDS,
   PACKED_INSTALL_SMOKE_GOAL_COMMANDS,
   parseNpmPackJsonOutput,
   resolveGitCommonDir,
   resolveReusableNodeModulesSource,
   validateHookStdout,
 } from '../smoke-packed-install.js';
-
-test('packed install smoke stays limited to boot + core commands', () => {
-  assert.deepEqual(PACKED_INSTALL_SMOKE_CORE_COMMANDS, [
-    ['--help'],
-    ['version'],
-    ['api', '--help'],
-    ['sparkshell', '--help'],
-  ]);
-  assert.equal(
-    PACKED_INSTALL_SMOKE_CORE_COMMANDS.some((argv) => argv.includes('api')),
-    true,
-  );
-  assert.equal(
-    PACKED_INSTALL_SMOKE_CORE_COMMANDS.some((argv) => argv.includes('sparkshell')),
-    true,
-  );
-});
 
 test('packed install smoke covers the sibling goal product boot path', () => {
   assert.deepEqual(PACKED_INSTALL_SMOKE_GOAL_COMMANDS, [
