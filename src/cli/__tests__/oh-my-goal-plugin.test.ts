@@ -85,6 +85,16 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(intake, /ambiguity score/i);
     assert.match(intake, /Gap-Fill Passes/i);
 
+    const generation = readSkillRelative('flows/02-artifact-generation.md');
+    assert.match(generation, /exact recommended Codex goal prompt/i);
+    assert.match(generation, /Do not only summarize it/i);
+    assert.match(generation, /do not ask whether to implement now/i);
+
+    const handoff = readSkillRelative('flows/03-goal-handoff.md');
+    assert.match(handoff, /exact prompt text/i);
+    assert.match(handoff, /fenced `text` block/i);
+    assert.match(handoff, /no implementation offer/i);
+
     const orchestration = readSkillRelative('flows/04-orchestration.md');
     assert.match(orchestration, /Metis/i);
     assert.match(orchestration, /Momus/i);
@@ -1088,8 +1098,10 @@ process.exit(0);
       );
       assert.equal(result.status, 0, result.stderr || result.stdout);
 
-      const summary = JSON.parse(result.stdout) as { root: string; files: string[] };
+      const summary = JSON.parse(result.stdout) as { root: string; files: string[]; goalPromptText: string };
       assert.equal(summary.root, '.omg/harness/ralpli-prd-draft');
+      assert.match(summary.goalPromptText, /Complete the user objective: ralpli PRD draft/);
+      assert.match(summary.goalPromptText, /Use the Oh My Goal harness artifacts/);
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/ambiguity-map.md'));
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/intake-questionnaire.md'));
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/runtime-commands.md'));

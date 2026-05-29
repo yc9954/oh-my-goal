@@ -2,6 +2,13 @@
 
 Use `goal-prompt.md` as the recommended Codex goal objective.
 
+The handoff response must include:
+
+- the harness path,
+- the `goal-prompt.md` path,
+- the exact prompt text in a fenced `text` block,
+- no implementation offer when intake selected harness-only, PRD-only, goal-prompt-only, or implementation-after-approval.
+
 ## Prompt Requirements
 
 The recommended goal prompt must:

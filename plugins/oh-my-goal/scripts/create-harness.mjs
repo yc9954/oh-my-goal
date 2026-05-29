@@ -595,12 +595,14 @@ async function main() {
   for (const [name, content] of Object.entries(files)) {
     await writeFile(join(root, name), `${content}\n`, 'utf-8');
   }
+  const recommendedGoalPrompt = goalPrompt({ objective, slug, route, answers });
 
   const summary = {
     slug,
     route,
     root: relative(args.cwd, root),
     goalPrompt: relative(args.cwd, join(root, 'goal-prompt.md')),
+    goalPromptText: recommendedGoalPrompt,
     contextIndex: relative(args.cwd, join(root, 'context-index.md')),
     files: Object.keys(files).map((name) => relative(args.cwd, join(root, name))),
   };
@@ -610,6 +612,9 @@ async function main() {
     console.log(`route: ${summary.route}`);
     console.log(`context: ${summary.contextIndex}`);
     console.log(`goal prompt: ${summary.goalPrompt}`);
+    console.log('');
+    console.log('recommended Codex goal prompt:');
+    console.log(recommendedGoalPrompt);
   }
 }
 
