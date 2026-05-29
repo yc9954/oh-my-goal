@@ -20,9 +20,27 @@ In Codex, invoke the skill:
 $oh-my-goal ralpli PRD 작성하고 싶어
 ```
 
-Text after `$oh-my-goal` is treated as the objective. The skill runs an OMX-style structured intake round, resolves ambiguity, then writes:
+Text after `$oh-my-goal` is treated as the objective. The first response is intentionally a questionnaire: the plugin should not create harness files, write implementation files, or start coding until you answer the intake questions or explicitly say to use defaults.
 
-The first response is intentionally a questionnaire. The plugin should not create harness files, write implementation files, or start coding until you answer the intake questions or explicitly say to use defaults.
+After intake, the skill resolves ambiguity and writes:
+
+The skill is split into a small router plus flow files:
+
+```text
+plugins/oh-my-goal/skills/oh-my-goal/
+  SKILL.md
+  FLOW.md
+  flows/00-entrypoint.md
+  flows/01-intake-gate.md
+  flows/02-artifact-generation.md
+  flows/03-goal-handoff.md
+  flows/04-orchestration.md
+  templates/intake-fallback.md
+  templates/worker-packet.md
+  references/omx-patterns.md
+```
+
+`SKILL.md` only defines the non-negotiable gate and points Codex to `FLOW.md`; the flow files hold the detailed sequence.
 
 ```text
 .omg/harness/<slug>/
