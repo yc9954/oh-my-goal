@@ -36,6 +36,8 @@ Build intake questions with `scripts/intake-question-engine.mjs`, which ports th
 
 When independent worker lanes are useful, use `scripts/team-runtime.mjs`. It ports the useful OMX Team execution surface into plugin-local state: task decomposition, worker packets, `.omg/runtime/team/<team>/` state, optional tmux worker panes, status, collection, and shutdown. Workers still must not own the Codex goal.
 
+Generated harnesses must include `runtime-commands.md`, and `goal-prompt.md` must tell the leader to auto-start Team runtime when lane separation is useful. Do not make the user run the `node ... team-runtime.mjs` command manually.
+
 The bundled generator may be used only after interview completion:
 
 ```sh

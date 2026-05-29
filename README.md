@@ -84,6 +84,7 @@ It writes `.omg/runtime/team/<team>/` state and opens tmux worker panes when att
   deep-interview.md
   goal-prompt.md
   harness.md
+  runtime-commands.md
   agents.md
   orchestration.md
   team-system.md
@@ -95,6 +96,7 @@ It writes `.omg/runtime/team/<team>/` state and opens tmux worker panes when att
 ```
 
 Use `goal-prompt.md` as the recommended `create_goal` payload after checking the active Codex goal.
+The generated goal prompt points the leader at `runtime-commands.md` and tells it to auto-start Team runtime when worker lanes are useful, so users should not need to run `team-runtime.mjs` by hand.
 
 ## Local Development
 

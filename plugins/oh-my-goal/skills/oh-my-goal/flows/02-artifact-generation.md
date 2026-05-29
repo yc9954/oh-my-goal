@@ -25,9 +25,10 @@ The harness root is `.omg/harness/<slug>/` and must include:
 - `deep-interview.md` - decisions, assumptions, and unresolved questions.
 - `goal-prompt.md` - final recommended Codex `create_goal` objective.
 - `harness.md` - execution lifecycle and state contract.
+- `runtime-commands.md` - leader-owned auto-start commands for Team runtime, status, collection, and shutdown.
 - `agents.md` - leader and worker lane responsibilities.
 - `orchestration.md` - how to use subagents or sequential lanes.
-- `team-system.md` - Team-style lane protocol without requiring OMX Team.
+- `team-system.md` - Team-style lane protocol with plugin-local runtime fallback.
 - `worker-packet-template.md` - reusable worker instruction/result packet.
 - `trajectory-ledger.md` - candidate path comparison table.
 - `state-ledger.md` - persistent leader-loop checkpoint log.
@@ -38,4 +39,4 @@ The harness root is `.omg/harness/<slug>/` and must include:
 
 If the script is unavailable, create the same files manually. Preserve the same state contract: one leader-owned Codex goal, worker lanes as evidence producers, trajectory comparison before commitment, and completion only after the gate passes.
 
-After generation, report the harness path and summarize `goal-prompt.md`. Do not start execution unless the user requested execution or approves the handoff.
+After generation, report the harness path and summarize `goal-prompt.md`. Do not ask the user to run `team-runtime.mjs` manually; the generated goal prompt and `runtime-commands.md` make the leader auto-start it during execution when lane separation is useful. Do not start execution unless the user requested execution or approves the handoff.

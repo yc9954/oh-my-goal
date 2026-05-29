@@ -9,7 +9,9 @@ The recommended goal prompt must:
 - keep one Codex goal as the single top-level objective,
 - include the original objective, acceptance criteria, non-goals, and verification,
 - require the leader to use `.omg/harness/<slug>/`,
-- require Team-style evidence lanes when independent work improves quality,
+- require reading `runtime-commands.md` before execution,
+- require the leader to auto-start Team runtime when independent work improves quality,
+- forbid asking the user to run Team runtime manually,
 - require at least two materially different trajectories before major commitment,
 - require adversarial review and basin-escape challenge before completion,
 - state that only the leader may call `update_goal({status: "complete"})`.

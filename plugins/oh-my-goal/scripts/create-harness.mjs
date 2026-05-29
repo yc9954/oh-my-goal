@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   buildIntakeQuestionInput,
   intakeQuestionsForObjective,
@@ -93,6 +94,31 @@ function markdownTable(headers, rows) {
   ]);
 }
 
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function teamRuntimeScriptPath() {
+  return join(fileURLToPath(new URL('.', import.meta.url)), 'team-runtime.mjs');
+}
+
+function teamRuntimeCommand({ objective, slug }) {
+  return [
+    'node',
+    shellQuote(teamRuntimeScriptPath()),
+    'launch',
+    '--objective',
+    shellQuote(objective),
+    '--team',
+    shellQuote(slug),
+    '--workers',
+    '3',
+    '--mode',
+    'auto',
+    '--json',
+  ].join(' ');
+}
+
 function ambiguityRows(objective, answers) {
   const prdDefault = /(prd|product requirements|requirements|요구사항|기획|스펙|spec)/i.test(objective)
     ? 'Assume next-version PRD'
@@ -144,10 +170,12 @@ function routeFor(objective, answers) {
 }
 
 function goalPrompt({ objective, slug, route, answers }) {
+  const autoTeamCommand = teamRuntimeCommand({ objective, slug });
   return lines([
     `Complete the user objective: ${objective}`,
     '',
     `Use the Oh My Goal harness artifacts in .omg/harness/${slug}/ as the execution contract.`,
+    `Read .omg/harness/${slug}/runtime-commands.md before execution.`,
     '',
     'Acceptance criteria:',
     answers.acceptance || '- Confirm concrete deliverables with the user before implementation.',
@@ -167,7 +195,10 @@ function goalPrompt({ objective, slug, route, answers }) {
     '- Keep one Codex goal as the single top-level objective.',
     '- Treat trailing text after `$oh-my-goal` as the objective; do not ask for it again.',
     '- Start with the ambiguity map and deep-interview artifacts; preserve unresolved assumptions.',
-    '- Use Team-style worker packets when independent evidence lanes improve quality.',
+    '- Do not ask the user to run Team runtime manually.',
+    '- Before implementation, automatically run the Team runtime auto-start command below when independent evidence lanes improve quality, the route is agent_orchestrated, or the work benefits from architect/tester/critic separation.',
+    `- Auto-start command: ${autoTeamCommand}`,
+    '- If the command returns `tmux_not_attached`, continue from the generated `.omg/runtime/team/<team>/` worker packets sequentially.',
     '- Select a trajectory only after comparing at least two materially different paths.',
     '- Use worker lanes only for evidence-producing research, implementation, testing, critique, or replanning.',
     '- Workers must not call create_goal, update_goal, or mark the mission complete.',
@@ -180,6 +211,7 @@ function goalPrompt({ objective, slug, route, answers }) {
 
 function artifactMap({ objective, slug, route, answers }) {
   const prompt = goalPrompt({ objective, slug, route, answers });
+  const autoTeamCommand = teamRuntimeCommand({ objective, slug });
   return {
     'context-index.md': lines([
       `# Oh My Goal Harness: ${slug}`,
@@ -193,14 +225,15 @@ function artifactMap({ objective, slug, route, answers }) {
       '3. `intake-questionnaire.md`',
       '4. `deep-interview.md`',
       '5. `harness.md`',
-      '6. `agents.md`',
-      '7. `orchestration.md`',
-      '8. `team-system.md`',
-      '9. `worker-packet-template.md`',
-      '10. `trajectory-ledger.md`',
-      '11. `state-ledger.md`',
-      '12. `local-optimum-pressure.md`',
-      '13. `completion-gate.md`',
+      '6. `runtime-commands.md`',
+      '7. `agents.md`',
+      '8. `orchestration.md`',
+      '9. `team-system.md`',
+      '10. `worker-packet-template.md`',
+      '11. `trajectory-ledger.md`',
+      '12. `state-ledger.md`',
+      '13. `local-optimum-pressure.md`',
+      '14. `completion-gate.md`',
       '',
       'The Codex goal owns active focus and token accounting. These files provide local durable context and evidence structure.',
     ]),
@@ -283,14 +316,15 @@ function artifactMap({ objective, slug, route, answers }) {
       '3. Batch independent high-leverage questions into one structured intake round when possible.',
       '4. Run two gap-fill passes after answers: assimilation, then residual critical-gap scan.',
       '5. Create or reuse one Codex goal with the prompt in `goal-prompt.md`.',
-      '6. Record candidate trajectories before selecting a plan.',
-      '7. Execute the selected trajectory with evidence checkpoints.',
-      '8. Add worker lanes only when they create independent evidence.',
-      '9. Give every worker a packet from `worker-packet-template.md`.',
-      '10. Record candidate paths in `trajectory-ledger.md`.',
-      '11. Checkpoint leader decisions in `state-ledger.md`.',
-      '12. Run local-optimum pressure before late completion.',
-      '13. Complete only after the gate in `completion-gate.md` passes.',
+      '6. Read `runtime-commands.md` and auto-start Team runtime when independent lanes improve quality.',
+      '7. Record candidate trajectories before selecting a plan.',
+      '8. Execute the selected trajectory with evidence checkpoints.',
+      '9. Add worker lanes only when they create independent evidence.',
+      '10. Give every worker a packet from `worker-packet-template.md`.',
+      '11. Record candidate paths in `trajectory-ledger.md`.',
+      '12. Checkpoint leader decisions in `state-ledger.md`.',
+      '13. Run local-optimum pressure before late completion.',
+      '14. Complete only after the gate in `completion-gate.md` passes.',
       '',
       'State convention:',
       '- Append leader notes and evidence to these Markdown files.',
@@ -324,12 +358,53 @@ function artifactMap({ objective, slug, route, answers }) {
       '- workers do not call update_goal.',
       '- workers return evidence, diffs, risks, blockers, and scores.',
     ]),
+    'runtime-commands.md': lines([
+      '# Runtime Commands',
+      '',
+      'These commands are for the Codex goal leader. The user should not need to run them manually.',
+      '',
+      '## Team Runtime Auto-Start',
+      '',
+      'Run this before implementation when independent evidence lanes improve quality, the route is `agent_orchestrated`, or architect/tester/critic separation is useful:',
+      '',
+      '```sh',
+      autoTeamCommand,
+      '```',
+      '',
+      'Expected behavior:',
+      '- Inside attached tmux, this opens visible worker panes and writes worker state.',
+      '- Outside tmux, it returns `tmux_not_attached`, still writes `.omg/runtime/team/' + slug + '/`, and the leader continues sequentially from worker packets.',
+      '- Workers must write evidence to `.omg/runtime/team/' + slug + '/workers/<worker>/result.md`.',
+      '',
+      '## Inspect And Collect',
+      '',
+      '```sh',
+      `node ${shellQuote(teamRuntimeScriptPath())} status --team ${shellQuote(slug)} --json`,
+      `node ${shellQuote(teamRuntimeScriptPath())} collect --team ${shellQuote(slug)} --json`,
+      '```',
+      '',
+      '## Cleanup',
+      '',
+      '```sh',
+      `node ${shellQuote(teamRuntimeScriptPath())} shutdown --team ${shellQuote(slug)} --json`,
+      '```',
+      '',
+      'If the embedded plugin cache path no longer exists, locate the installed `oh-my-goal` plugin and use its `scripts/team-runtime.mjs` with the same arguments.',
+    ]),
     'orchestration.md': lines([
       '# Orchestration',
       '',
       'Use native Codex subagents or available agent tools when present. If none are available, run the same lanes sequentially.',
       '',
-      'This borrows the useful part of OMX Team: independent evidence lanes with explicit boundaries. It does not require an OMX launcher, tmux session, or Team runtime.',
+      'This borrows the useful part of OMX Team: independent evidence lanes with explicit boundaries. It does not require an OMX launcher. The leader should auto-start the plugin Team runtime when independent lanes are useful.',
+      '',
+      'Auto-start command:',
+      '',
+      '```sh',
+      autoTeamCommand,
+      '```',
+      '',
+      'If the runtime reports `tmux_not_attached`, use the generated `.omg/runtime/team/' + slug + '/workers/<worker>/prompt.md` packets sequentially.',
       '',
       'Recommended sequence:',
       '1. Leader frames the objective and acceptance map.',
@@ -363,6 +438,7 @@ function artifactMap({ objective, slug, route, answers }) {
       '- Workers do not call update_goal.',
       '- Workers do not mark the mission complete.',
       '- Every lane returns evidence in a packet format.',
+      '- The leader auto-starts Team runtime from `runtime-commands.md` when lane separation is useful.',
       '',
       'Recommended lanes:',
       '',

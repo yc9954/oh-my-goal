@@ -29,10 +29,11 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(skill, /intake-question-engine\.mjs/);
     assert.match(skill, /intake-question-runtime\.mjs/);
     assert.match(skill, /team-runtime\.mjs/);
+    assert.match(skill, /runtime-commands\.md/);
     assert.match(skill, /questions\[\]/);
     assert.match(skill, /selected_values/);
     assert.match(skill, /--interview-complete/i);
-    assert.ok(skill.length < 3600, 'SKILL.md should stay a compact router');
+    assert.ok(skill.length < 3900, 'SKILL.md should stay a compact router');
   });
 
   it('splits the workflow into explicit flow, template, and reference files', () => {
@@ -375,17 +376,28 @@ describe('oh-my-goal plugin contract', () => {
       assert.equal(summary.root, '.omg/harness/ralpli-prd-draft');
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/ambiguity-map.md'));
       assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/intake-questionnaire.md'));
+      assert.ok(summary.files.includes('.omg/harness/ralpli-prd-draft/runtime-commands.md'));
 
       const harnessRoot = join(cwd, summary.root);
       const goalPrompt = readFileSync(join(harnessRoot, 'goal-prompt.md'), 'utf-8');
       const ambiguityMap = readFileSync(join(harnessRoot, 'ambiguity-map.md'), 'utf-8');
       const questionnaire = readFileSync(join(harnessRoot, 'intake-questionnaire.md'), 'utf-8');
+      const runtimeCommands = readFileSync(join(harnessRoot, 'runtime-commands.md'), 'utf-8');
+      const orchestration = readFileSync(join(harnessRoot, 'orchestration.md'), 'utf-8');
 
       assert.match(goalPrompt, /Complete the user objective: ralpli PRD draft/);
       assert.doesNotMatch(goalPrompt, /Complete the user objective: \$oh-my-goal/);
+      assert.match(goalPrompt, /runtime-commands\.md/);
+      assert.match(goalPrompt, /Do not ask the user to run Team runtime manually/);
+      assert.match(goalPrompt, /Auto-start command: node '.+team-runtime\.mjs' launch/);
+      assert.match(goalPrompt, /tmux_not_attached/);
       assert.match(ambiguityMap, /OMX deep-interview pattern/i);
       assert.match(questionnaire, /Batch independent high-leverage questions/i);
       assert.match(questionnaire, /Gap-fill contract/i);
+      assert.match(runtimeCommands, /Team Runtime Auto-Start/);
+      assert.match(runtimeCommands, /The user should not need to run them manually/);
+      assert.match(runtimeCommands, /--team 'ralpli-prd-draft'/);
+      assert.match(orchestration, /The leader should auto-start the plugin Team runtime/);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
