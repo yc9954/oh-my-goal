@@ -223,6 +223,10 @@ if (args[0] === 'send') {
   }
   process.exit(0);
 }
+if (args[0] === 'send-key' || args[0] === 'focus-pane') {
+  if (process.env.OMG_FAKE_CMUX_LOG) fs.appendFileSync(process.env.OMG_FAKE_CMUX_LOG, JSON.stringify(args) + '\\n');
+  process.exit(0);
+}
 process.exit(0);
 `,
         'utf-8',
@@ -766,6 +770,7 @@ process.exit(0);
             CMUX_BUNDLED_CLI_PATH: fakeCmux,
             OMG_QUESTION_RETURN_CMUX_WORKSPACE: 'workspace:1',
             OMG_QUESTION_RETURN_CMUX_SURFACE: 'surface:1',
+            OMG_QUESTION_RETURN_CMUX_PANE: 'pane:1',
             OMG_QUESTION_RETURN_MESSAGE: 'continue',
             OMG_FAKE_CMUX_LOG: cmuxNotifyLog,
           },
@@ -773,7 +778,11 @@ process.exit(0);
       );
       assert.equal(notifyUi.status, 0, notifyUi.stderr || notifyUi.stdout);
       assert.match(readFileSync(cmuxNotifyLog, 'utf-8'), /"send"/);
+      assert.match(readFileSync(cmuxNotifyLog, 'utf-8'), /"send-key"/);
+      assert.match(readFileSync(cmuxNotifyLog, 'utf-8'), /"focus-pane"/);
       assert.match(readFileSync(cmuxNotifyLog, 'utf-8'), /"surface:1"/);
+      assert.match(readFileSync(cmuxNotifyLog, 'utf-8'), /"pane:1"/);
+      assert.match(readFileSync(cmuxNotifyLog, 'utf-8'), /"enter"/);
       assert.match(readFileSync(cmuxNotifyLog, 'utf-8'), /continue/);
 
       const inline = spawnSync(

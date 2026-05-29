@@ -351,6 +351,7 @@ function buildQuestionUiCommand(statePath, cwd, env = {}) {
     envAssignment('OMG_QUESTION_RETURN_TRANSPORT', 'state'),
     envAssignment('OMG_QUESTION_RETURN_CMUX_WORKSPACE', env.cmuxWorkspace),
     envAssignment('OMG_QUESTION_RETURN_CMUX_SURFACE', env.cmuxSurface),
+    envAssignment('OMG_QUESTION_RETURN_CMUX_PANE', env.cmuxPane),
     envAssignment('OMG_QUESTION_RETURN_MESSAGE', env.returnMessage),
   ].filter(Boolean).join(' ');
   return [
@@ -388,6 +389,7 @@ function launchCmuxUi(statePath, record) {
     `${buildQuestionUiCommand(statePath, record.cwd || process.cwd(), {
       cmuxWorkspace: context.workspace,
       cmuxSurface: context.surface,
+      cmuxPane: context.pane,
       returnMessage: 'continue',
     })}\n`,
   ]);
@@ -1169,8 +1171,18 @@ async function finalizeOrExtendRecord(statePath, record, answers) {
 function notifyQuestionReturn(_record, statePath) {
   const workspace = safeString(process.env.OMG_QUESTION_RETURN_CMUX_WORKSPACE).trim();
   const surface = safeString(process.env.OMG_QUESTION_RETURN_CMUX_SURFACE).trim();
+  const pane = safeString(process.env.OMG_QUESTION_RETURN_CMUX_PANE).trim();
   if (!workspace || !surface) return;
   const message = safeString(process.env.OMG_QUESTION_RETURN_MESSAGE).trim() || 'continue';
+  if (pane) {
+    cmux([
+      'focus-pane',
+      '--workspace',
+      workspace,
+      '--pane',
+      pane,
+    ]);
+  }
   cmux([
     'send',
     '--workspace',
@@ -1178,7 +1190,15 @@ function notifyQuestionReturn(_record, statePath) {
     '--surface',
     surface,
     '--',
-    `${message}\n`,
+    message,
+  ]);
+  cmux([
+    'send-key',
+    '--workspace',
+    workspace,
+    '--surface',
+    surface,
+    'enter',
   ]);
 }
 
