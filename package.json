@@ -19,7 +19,6 @@
     "lint": "biome lint src",
     "prepare": "node src/scripts/prepare-git-build.js",
     "prepack": "npm run build && npm run verify:native-agents && npm run sync:plugin && npm run verify:plugin-bundle && npm run clean:native-package-assets",
-    "postinstall": "node src/scripts/postinstall-bootstrap.js",
     "setup": "node dist/cli/omx.js setup",
     "doctor": "node dist/cli/omx.js doctor",
     "ask:claude": "./src/scripts/ask-claude.sh",

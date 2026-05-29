@@ -50,7 +50,6 @@ describe('package bin contract', () => {
     assert.equal(pkg.scripts?.build, 'node -e "const fs=require(\'fs\'); fs.rmSync(\'dist\',{recursive:true,force:true});" && tsc && node -e "const fs=require(\'fs\'); for (const bin of [\'dist/cli/omx.js\',\'dist/cli/omg.js\']) fs.chmodSync(bin, 0o755);"');
     assert.equal(pkg.scripts?.prepare, 'node src/scripts/prepare-git-build.js');
     assert.equal(pkg.scripts?.prepack, 'npm run build && npm run verify:native-agents && npm run sync:plugin && npm run verify:plugin-bundle && npm run clean:native-package-assets');
-    assert.equal(pkg.scripts?.postinstall, 'node src/scripts/postinstall-bootstrap.js');
     assert.equal(pkg.scripts?.postpack, 'npm run clean:native-package-assets');
     assert.equal(pkg.scripts?.['test:explore'], 'cargo test -p omx-explore-harness && node --test dist/cli/__tests__/explore.test.js dist/hooks/__tests__/explore-routing.test.js dist/hooks/__tests__/explore-sparkshell-guidance-contract.test.js');
     assert.equal(pkg.scripts?.['test:team:cross-rebase-smoke:compiled'], 'node --test dist/team/__tests__/cross-rebase-smoke.test.js');
