@@ -187,6 +187,9 @@ describe('package bin contract', () => {
     const crateMainEntry = results[0]?.files?.find((file) => file.path === 'crates/omx-explore/src/main.rs');
     const marketplaceEntry = results[0]?.files?.find((file) => file.path === '.agents/plugins/marketplace.json');
     const pluginManifestEntry = results[0]?.files?.find((file) => file.path === 'plugins/oh-my-codex/.codex-plugin/plugin.json');
+    const goalPluginManifestEntry = results[0]?.files?.find((file) => file.path === 'plugins/oh-my-goal/.codex-plugin/plugin.json');
+    const goalPluginSkillEntry = results[0]?.files?.find((file) => file.path === 'plugins/oh-my-goal/skills/oh-my-goal/SKILL.md');
+    const goalPluginScriptEntry = results[0]?.files?.find((file) => file.path === 'plugins/oh-my-goal/scripts/create-harness.mjs');
     const pluginMcpEntry = results[0]?.files?.find((file) => file.path === 'plugins/oh-my-codex/.mcp.json');
     const pluginAppsEntry = results[0]?.files?.find((file) => file.path === 'plugins/oh-my-codex/.app.json');
     const stateServerEntry = results[0]?.files?.find((file) => file.path === 'dist/mcp/state-server.js');
@@ -214,6 +217,9 @@ describe('package bin contract', () => {
     assert.ok(crateMainEntry, 'expected npm pack output to include crates/omx-explore/src/main.rs');
     assert.ok(marketplaceEntry, 'expected npm pack output to include .agents/plugins/marketplace.json');
     assert.ok(pluginManifestEntry, 'expected npm pack output to include plugins/oh-my-codex/.codex-plugin/plugin.json');
+    assert.ok(goalPluginManifestEntry, 'expected npm pack output to include plugins/oh-my-goal/.codex-plugin/plugin.json');
+    assert.ok(goalPluginSkillEntry, 'expected npm pack output to include plugins/oh-my-goal skill');
+    assert.ok(goalPluginScriptEntry, 'expected npm pack output to include oh-my-goal harness generator');
     assert.ok(pluginMcpEntry, 'expected npm pack output to include plugins/oh-my-codex/.mcp.json');
     assert.ok(pluginAppsEntry, 'expected npm pack output to include plugins/oh-my-codex/.app.json');
     assert.ok(stateServerEntry, 'expected npm pack output to include dist/mcp/state-server.js for omx mcp-serve');
