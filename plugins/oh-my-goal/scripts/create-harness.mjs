@@ -309,6 +309,7 @@ function artifactMap({ objective, slug, route, answers }) {
   const pressureGateCommand = pressureRuntimeGateCommand({ slug });
   const pressureStatusCommand = `node ${shellQuote(pressureRuntimeScriptPath())} status --slug ${shellQuote(slug)} --json`;
   const pressureTeamCommand = `node ${shellQuote(pressureRuntimeScriptPath())} team-command --slug ${shellQuote(slug)} --json`;
+  const pressureImportTeamCommand = `node ${shellQuote(pressureRuntimeScriptPath())} import-team --slug ${shellQuote(slug)} --team ${shellQuote(slug)} --json`;
   return {
     'context-index.md': lines([
       `# Oh My Goal Harness: ${slug}`,
@@ -519,7 +520,10 @@ function artifactMap({ objective, slug, route, answers }) {
       '```sh',
       `node ${shellQuote(teamRuntimeScriptPath())} status --team ${shellQuote(slug)} --json`,
       `node ${shellQuote(teamRuntimeScriptPath())} collect --team ${shellQuote(slug)} --json`,
+      pressureImportTeamCommand,
       '```',
+      '',
+      'Use `import-team` after workers write `result.md`; it converts Team evidence into pressure-runtime trajectories.',
       '',
       '## Cleanup',
       '',

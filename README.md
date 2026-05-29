@@ -85,7 +85,7 @@ node plugins/oh-my-goal/scripts/pressure-runtime.mjs init \
   --json
 ```
 
-It writes `.omg/runtime/pressure/<slug>/` state, forces evidence-backed baseline/novelty/critic trajectories, creates perturbations for repeated blockers, and blocks completion until `pressure-runtime.mjs gate` passes.
+It writes `.omg/runtime/pressure/<slug>/` state, forces evidence-backed baseline/novelty/critic trajectories, imports Team worker `result.md` files with `pressure-runtime.mjs import-team`, creates perturbations for repeated blockers, and blocks completion until `pressure-runtime.mjs gate` passes.
 
 ```text
 .omg/harness/<slug>/

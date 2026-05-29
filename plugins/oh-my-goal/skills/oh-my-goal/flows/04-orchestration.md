@@ -56,8 +56,11 @@ Inspect and collect Team work with:
 ```sh
 node <plugin-root>/scripts/team-runtime.mjs status --team <team> --json
 node <plugin-root>/scripts/team-runtime.mjs collect --team <team> --json
+node <plugin-root>/scripts/pressure-runtime.mjs import-team --slug <slug> --team <team> --json
 node <plugin-root>/scripts/team-runtime.mjs shutdown --team <team> --json
 ```
+
+Use `import-team` after workers write `result.md`; it parses each worker Summary, Evidence, Trajectory score, Novelty score, and Recommendation into pressure-runtime trajectories.
 
 ## OMX-Style Planning Voices
 

@@ -98,6 +98,7 @@ Usage:
   node scripts/pressure-runtime.mjs step --slug <slug> --outcome <progress|blocked|ready-for-gate> --evidence <text> [--json]
   node scripts/pressure-runtime.mjs perturb --slug <slug> [--blocker <text>] [--json]
   node scripts/pressure-runtime.mjs team-command --slug <slug> [--mode auto|cmux|tmux|dry-run] [--json]
+  node scripts/pressure-runtime.mjs import-team --slug <slug> --team <team> [--json]
   node scripts/pressure-runtime.mjs gate --slug <slug> --evidence-json <json-or-path> [--json]
 
 Purpose:
@@ -120,6 +121,10 @@ function nowIso() {
 
 function pressureRoot(cwd, slug) {
   return join(cwd, '.omg', 'runtime', 'pressure', slug);
+}
+
+function teamRoot(cwd, teamName) {
+  return join(cwd, '.omg', 'runtime', 'team', sanitizeTeamName(teamName));
 }
 
 function pressureStatePath(cwd, slug) {
@@ -158,6 +163,13 @@ function evidenceBacked(trajectory) {
 
 function pressureRole(role) {
   return role === 'critic' || role === 'tester' || role === 'replanner';
+}
+
+function coercePressureRole(role) {
+  const normalized = safeString(role).trim();
+  if (VALID_ROLES.has(normalized)) return normalized;
+  if (normalized === 'writer') return 'researcher';
+  return 'critic';
 }
 
 function buildAnnealingChallenge(phase, route = DEFAULT_ROUTE) {
@@ -415,8 +427,8 @@ function pressureTeamObjective(state) {
     '- critic: attack hidden assumptions and false completion.',
     '- tester: define or run a verification probe that could falsify the current path.',
     '',
-    'Each worker must return evidence, score 0-100, novelty score 0-100, blockers, and recommendation.',
-    `Record results with: node ${shellQuote(scriptPath('pressure-runtime.mjs'))} record --slug ${shellQuote(state.slug)} --source worker --role <role> --summary "<summary>" --evidence "<evidence>" --score <0-100> --novelty-score <0-100> --json`,
+    'Each worker must write result.md with Summary, Evidence, Trajectory score 0-100, Novelty score 0-100, and Recommendation.',
+    `Leader imports results with: node ${shellQuote(scriptPath('pressure-runtime.mjs'))} import-team --slug ${shellQuote(state.slug)} --team ${shellQuote(`${state.slug}-pressure`)} --json`,
   ].join('\n');
 }
 
@@ -837,6 +849,160 @@ function evaluateRuntimePressure(state) {
   return { missing, blockers };
 }
 
+function normalizeResultLabel(value) {
+  return safeString(value).toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+const RESULT_SECTION_KEYS = new Map([
+  ['summary', 'summary'],
+  ['evidence', 'evidence'],
+  ['filesorartifacts', 'artifacts'],
+  ['filesartifacts', 'artifacts'],
+  ['artifacts', 'artifacts'],
+  ['verificationcommandsandobservedoutput', 'verification'],
+  ['verification', 'verification'],
+  ['risksorblockers', 'risks'],
+  ['risks', 'risks'],
+  ['blockers', 'risks'],
+  ['trajectoryscore0100', 'trajectoryScore'],
+  ['trajectoryscore', 'trajectoryScore'],
+  ['score', 'trajectoryScore'],
+  ['noveltyscore0100', 'noveltyScore'],
+  ['noveltyscore', 'noveltyScore'],
+  ['recommendation', 'recommendation'],
+]);
+
+function parseWorkerResultSections(content) {
+  const sections = {};
+  let currentKey = '';
+  for (const rawLine of safeString(content).split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const match = /^(?:[-*]\s*)?([A-Za-z][A-Za-z0-9 /_-]{0,80}?):\s*(.*)$/.exec(line);
+    if (match) {
+      const key = RESULT_SECTION_KEYS.get(normalizeResultLabel(match[1]));
+      if (key) {
+        currentKey = key;
+        if (!sections[currentKey]) sections[currentKey] = [];
+        if (match[2].trim()) sections[currentKey].push(match[2].trim());
+        continue;
+      }
+    }
+    if (currentKey && line) sections[currentKey].push(line);
+  }
+  return sections;
+}
+
+function firstNumber(values) {
+  for (const value of values) {
+    const match = safeString(value).match(/\b(?:100|[0-9]{1,2})(?:\.[0-9]+)?\b/);
+    if (match) return parseScore(match[0], 'worker result score');
+  }
+  return undefined;
+}
+
+function importedStatus(recommendationValues) {
+  const recommendation = recommendationValues.map((item) => safeString(item).toLowerCase()).join(' ');
+  if (/\breject\b/.test(recommendation)) return 'rejected';
+  if (/\bblock(?:ed)?\b/.test(recommendation)) return 'blocked';
+  return 'candidate';
+}
+
+function defaultNoveltyForRole(role) {
+  if (role === 'replanner') return 75;
+  if (role === 'critic') return 55;
+  if (role === 'tester') return 45;
+  if (role === 'architect') return 35;
+  return 30;
+}
+
+function parseWorkerResult({ teamName, worker, content }) {
+  const sections = parseWorkerResultSections(content);
+  const role = coercePressureRole(worker.role);
+  const summary = compact((sections.summary || []).join(' '))
+    || compact(`${worker.worker_id} ${role} worker result`);
+  const evidence = [
+    ...(sections.evidence || []),
+    ...(sections.artifacts || []).map((item) => `artifact: ${item}`),
+    ...(sections.verification || []).map((item) => `verification: ${item}`),
+    ...(sections.risks || []).map((item) => `risk/blocker: ${item}`),
+  ].map(compact).filter(Boolean);
+  if (evidence.length === 0) evidence.push(compact(content));
+  const trajectoryScore = firstNumber(sections.trajectoryScore || []);
+  const noveltyScore = firstNumber(sections.noveltyScore || []) ?? defaultNoveltyForRole(role);
+  return {
+    id: `W-${sanitizeTeamName(teamName)}-${sanitizeTeamName(worker.worker_id || worker.name || role)}`,
+    source: 'worker',
+    role,
+    summary,
+    evidence,
+    score: trajectoryScore,
+    novelty_score: noveltyScore,
+    status: importedStatus(sections.recommendation || []),
+    result_path: worker.result,
+    worker_id: worker.worker_id || worker.name,
+  };
+}
+
+async function commandImportTeam(args) {
+  if (!args.slug) throw new Error('import-team requires --slug <slug>.');
+  if (!args.team) throw new Error('import-team requires --team <team>.');
+  const cwd = resolve(args.cwd || process.cwd());
+  const state = await loadState(cwd, args.slug);
+  const root = pressureRoot(cwd, state.slug);
+  const teamName = sanitizeTeamName(args.team);
+  const teamConfigPath = join(teamRoot(cwd, teamName), 'config.json');
+  if (!existsSync(teamConfigPath)) throw new Error(`team state not found: ${relativePath(cwd, teamConfigPath)}`);
+  const team = await readJson(teamConfigPath);
+  const imported = [];
+  const skipped = [];
+  const timestamp = nowIso();
+  for (const worker of team.workers || []) {
+    const resultPath = join(cwd, worker.result || '');
+    if (!worker.result || !existsSync(resultPath)) {
+      skipped.push({ worker_id: worker.worker_id || worker.name, reason: 'missing result.md', result: worker.result || null });
+      continue;
+    }
+    const parsed = parseWorkerResult({
+      teamName,
+      worker,
+      content: await readFile(resultPath, 'utf-8'),
+    });
+    if (parsed.score === undefined && (parsed.status === 'candidate' || parsed.status === 'accepted')) {
+      skipped.push({ worker_id: parsed.worker_id, reason: 'missing trajectory score', result: parsed.result_path });
+      continue;
+    }
+    const existing = state.trajectories.find((trajectory) => trajectory.id === parsed.id);
+    const patch = {
+      ...parsed,
+      planned: false,
+      imported_from_team: teamName,
+      created_at: existing?.created_at || timestamp,
+      updated_at: timestamp,
+    };
+    if (existing) Object.assign(existing, patch);
+    else state.trajectories.push(patch);
+    imported.push(patch);
+  }
+  await writeStateBundle(cwd, state);
+  await appendEvent(root, {
+    type: 'team_results_imported',
+    team: teamName,
+    imported: imported.map((trajectory) => trajectory.id),
+    skipped,
+  });
+  return {
+    ok: skipped.length === 0,
+    command: 'import-team',
+    slug: state.slug,
+    team: teamName,
+    imported,
+    skipped,
+    next_action: imported.length > 0
+      ? 'Inspect pressure status, select the best trajectory when at least two independent evidence-backed candidates exist, then run the gate.'
+      : 'Wait for worker result.md files or add missing trajectory scores before importing again.',
+  };
+}
+
 async function commandGate(args) {
   if (!args.slug) throw new Error('gate requires --slug <slug>.');
   const cwd = resolve(args.cwd || process.cwd());
@@ -920,6 +1086,7 @@ async function main() {
   if (command === 'step') return printPayload(await commandStep(args), args.json);
   if (command === 'perturb') return printPayload(await commandPerturb(args), args.json);
   if (command === 'team-command') return printPayload(await commandTeamCommand(args), args.json);
+  if (command === 'import-team') return printPayload(await commandImportTeam(args), args.json);
   if (command === 'gate') return printPayload(await commandGate(args), args.json);
   throw new Error(`Unknown command: ${command}`);
 }

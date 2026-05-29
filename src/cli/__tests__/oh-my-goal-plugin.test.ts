@@ -1153,6 +1153,7 @@ process.exit(0);
     const pressureSource = readFileSync(pressureRuntimePath, 'utf-8');
     assert.match(pressureSource, /omx\.goal-harness\/runtime\+perturbation/);
     assert.match(pressureSource, /buildAnnealingChallenge/);
+    assert.match(pressureSource, /commandImportTeam/);
     assert.match(pressureSource, /at least two evidence-backed trajectories/);
     assert.match(pressureSource, /critic, tester, or replanner pressure evidence/);
 
@@ -1215,6 +1216,87 @@ process.exit(0);
       assert.equal(earlyGatePayload.ok, false);
       assert.ok(earlyGatePayload.gate.missing.includes('selected active trajectory'));
       assert.ok(earlyGatePayload.gate.missing.includes('at least two evidence-backed trajectories'));
+
+      const teamLaunch = spawnSync(
+        process.execPath,
+        [
+          teamRuntimePath,
+          'launch',
+          '--objective',
+          'critic pressure, tester verification',
+          '--team',
+          'calculator-pressure',
+          '--workers',
+          '2',
+          '--mode',
+          'dry-run',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(teamLaunch.status, 0, teamLaunch.stderr || teamLaunch.stdout);
+      const teamLaunchPayload = JSON.parse(teamLaunch.stdout) as {
+        workers: Array<{ result: string }>;
+      };
+      writeFileSync(
+        join(cwd, teamLaunchPayload.workers[0]!.result),
+        [
+          'Summary: critic pressure lane',
+          'Evidence: found a false-completion risk in the calculator path',
+          'Files or artifacts: .omg/harness/calculator/completion-gate.md',
+          'Verification commands and observed output: inspected completion gate',
+          'Risks or blockers: missing keyboard edge case',
+          'Trajectory score 0-100: 82',
+          'Novelty score 0-100: 55',
+          'Recommendation: revise',
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+      writeFileSync(
+        join(cwd, teamLaunchPayload.workers[1]!.result),
+        [
+          'Summary: tester verification lane',
+          'Evidence: keyboard-first alternative is testable with browser events',
+          'Verification commands and observed output: planned DOM event probe',
+          'Trajectory score 0-100: 78',
+          'Novelty score 0-100: 45',
+          'Recommendation: accept',
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+      const importedTeam = spawnSync(
+        process.execPath,
+        [
+          pressureRuntimePath,
+          'import-team',
+          '--slug',
+          'calculator',
+          '--team',
+          'calculator-pressure',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(importedTeam.status, 0, importedTeam.stderr || importedTeam.stdout);
+      const importedTeamPayload = JSON.parse(importedTeam.stdout) as {
+        ok: boolean;
+        imported: Array<{ id: string; source: string; role: string; score: number; evidence: string[] }>;
+        skipped: unknown[];
+      };
+      assert.equal(importedTeamPayload.ok, true);
+      assert.equal(importedTeamPayload.imported.length, 2);
+      assert.deepEqual(importedTeamPayload.skipped, []);
+      assert.equal(importedTeamPayload.imported[0]?.source, 'worker');
+      assert.equal(importedTeamPayload.imported[0]?.role, 'critic');
+      assert.equal(importedTeamPayload.imported[0]?.score, 82);
+      assert.match(importedTeamPayload.imported[0]?.id || '', /^W-calculator-pressure-worker-1$/);
+      assert.ok(importedTeamPayload.imported[0]?.evidence.some((item) => item.includes('false-completion risk')));
 
       const baseline = spawnSync(
         process.execPath,
@@ -1448,6 +1530,7 @@ process.exit(0);
       assert.match(runtimeCommands, /Pressure Runtime Auto-Start/);
       assert.match(runtimeCommands, /pressure-runtime\.mjs' init/);
       assert.match(runtimeCommands, /pressure-runtime\.mjs' gate/);
+      assert.match(runtimeCommands, /pressure-runtime\.mjs' import-team/);
       assert.match(runtimeCommands, /CMUX Visibility/);
       assert.match(runtimeCommands, /cmux tree/);
       assert.match(runtimeCommands, /read-screen/);
