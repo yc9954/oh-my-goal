@@ -153,18 +153,52 @@ function tmux(args) {
   return spawnSync('tmux', args, { encoding: 'utf-8' });
 }
 
+function isPaneId(value) {
+  return /^%\d+$/.test(safeString(value).trim());
+}
+
 function currentTmuxPane() {
   if (!safeString(process.env.TMUX).trim()) return null;
   const target = safeString(process.env.TMUX_PANE).trim();
-  if (/^%\d+$/.test(target)) return target;
+  if (isPaneId(target)) return target;
   const result = tmux(['display-message', '-p', '#{pane_id}']);
   if (result.status !== 0) return null;
   const pane = safeString(result.stdout).trim();
-  return /^%\d+$/.test(pane) ? pane : null;
+  return isPaneId(pane) ? pane : null;
 }
 
 function tmuxAvailable() {
-  return Boolean(currentTmuxPane());
+  return Boolean(currentTmuxPane() && isCurrentTmuxSessionAttached());
+}
+
+function isCurrentTmuxSessionAttached() {
+  if (!safeString(process.env.TMUX).trim()) return false;
+  const target = currentTmuxPane();
+  const result = tmux(['display-message', '-p', ...(target ? ['-t', target] : []), '#{session_attached}']);
+  if (result.status !== 0) return false;
+  return Number.parseInt(safeString(result.stdout).trim(), 10) > 0;
+}
+
+function parsePaneIdFromTmuxOutput(output) {
+  const pane = safeString(output)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => isPaneId(line));
+  return pane || null;
+}
+
+function isTmuxPaneAlive(paneId) {
+  if (!isPaneId(paneId)) return false;
+  const result = tmux(['list-panes', '-t', paneId, '-F', '#{pane_dead}\t#{pane_id}']);
+  if (result.status !== 0) return false;
+  return safeString(result.stdout)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .some((line) => {
+      const [paneDead = '', resolvedPaneId = ''] = line.split('\t');
+      return resolvedPaneId === paneId && paneDead !== '1';
+    });
 }
 
 function estimatePaneHeight(record) {
@@ -179,6 +213,7 @@ function launchTmuxUi(statePath, record) {
   const scriptPath = fileURLToPath(import.meta.url);
   const leaderPane = currentTmuxPane();
   if (!leaderPane) throw new Error('tmux mode requires an attached tmux pane.');
+  if (!isCurrentTmuxSessionAttached()) throw new Error('tmux mode requires an attached tmux client.');
   const result = tmux([
     'split-window',
     '-v',
@@ -186,6 +221,15 @@ function launchTmuxUi(statePath, record) {
     estimatePaneHeight(record),
     '-t',
     leaderPane,
+    '-P',
+    '-F',
+    '#{pane_id}',
+    '-c',
+    record.cwd || process.cwd(),
+    '-e',
+    `OMG_QUESTION_RETURN_PANE=${leaderPane}`,
+    '-e',
+    'OMG_QUESTION_RETURN_TRANSPORT=state',
     process.execPath,
     scriptPath,
     '--ui',
@@ -195,9 +239,14 @@ function launchTmuxUi(statePath, record) {
   if (result.status !== 0) {
     throw new Error(safeString(result.stderr).trim() || 'failed to launch tmux question pane');
   }
+  const paneId = parsePaneIdFromTmuxOutput(result.stdout);
+  if (!paneId) throw new Error('failed to resolve tmux question pane id');
   return {
     renderer: 'tmux-pane',
+    target: paneId,
     leader_pane: leaderPane,
+    return_target: leaderPane,
+    return_transport: 'state',
     launched_at: new Date().toISOString(),
   };
 }
@@ -215,7 +264,6 @@ function parseSelectionToken(raw, questionNumber) {
 function parseSelection(raw, optionCount, multiSelect, questionNumber = null) {
   const trimmed = raw.trim();
   if (!trimmed) return null;
-  const withoutOtherText = trimmed.split(':')[0] || trimmed;
   const parts = multiSelect ? trimmed.split(',') : [trimmed];
   const values = parts
     .map((part) => parseSelectionToken(part.trim().split(':')[0] || part.trim(), questionNumber))
@@ -799,6 +847,9 @@ async function waitForAnswer(statePath, timeoutMs) {
       if (record.status === 'error' || record.status === 'aborted') {
         throw new Error(`question ended with status ${record.status}`);
       }
+      if (record.renderer?.renderer === 'tmux-pane' && !isTmuxPaneAlive(record.renderer.target)) {
+        throw new Error(`question renderer ${record.renderer.target} exited before answering`);
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
@@ -834,11 +885,12 @@ async function runInline(cwd, input) {
 async function runTmux(cwd, input, timeoutMs) {
   const { record, statePath } = await createRecord(cwd, input);
   const renderer = launchTmuxUi(statePath, record);
+  const current = await readJson(statePath);
   await writeJsonAtomic(statePath, {
-    ...record,
-    status: 'prompting',
-    updated_at: new Date().toISOString(),
-    renderer,
+    ...current,
+    status: current.status === 'answered' ? 'answered' : 'prompting',
+    updated_at: current.updated_at || new Date().toISOString(),
+    renderer: current.renderer || renderer,
   });
   return successPayload(await waitForAnswer(statePath, timeoutMs));
 }

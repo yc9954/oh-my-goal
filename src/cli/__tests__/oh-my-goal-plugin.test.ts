@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
@@ -28,6 +28,7 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(skill, /Do not create harness files/i);
     assert.match(skill, /intake-question-engine\.mjs/);
     assert.match(skill, /intake-question-runtime\.mjs/);
+    assert.match(skill, /--mode auto/);
     assert.match(skill, /--mode sequential/);
     assert.match(skill, /sequential-answer/);
     assert.match(skill, /ambiguity score/i);
@@ -155,8 +156,97 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(runtimeSource, /emitKeypressEvents/);
     assert.match(runtimeSource, /renderQuestionWizardFrame/);
     assert.match(runtimeSource, /↑↓ move/);
+    assert.match(runtimeSource, /split-window/);
+    assert.match(runtimeSource, /#\{pane_id\}/);
+    assert.match(runtimeSource, /OMG_QUESTION_RETURN_PANE/);
+    assert.match(runtimeSource, /isCurrentTmuxSessionAttached/);
     const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-runtime-'));
     try {
+      const fakeBin = join(cwd, 'bin');
+      mkdirSync(fakeBin);
+      const fakeTmux = join(fakeBin, 'tmux');
+      writeFileSync(
+        fakeTmux,
+        `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args[0] === 'display-message') {
+  const format = args[args.length - 1];
+  if (format === '#{pane_id}') process.stdout.write('%1\\n');
+  else if (format === '#{session_attached}') process.stdout.write('1\\n');
+  else if (format === '#{pane_height}') process.stdout.write('40\\n');
+  process.exit(0);
+}
+if (args[0] === 'list-panes') {
+  process.stdout.write('0\\t%99\\n');
+  process.exit(0);
+}
+if (args[0] === 'split-window') {
+  const statePath = args[args.indexOf('--state-path') + 1];
+  const record = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  const answers = record.questions.map((question, index) => {
+    const selected = question.options[0];
+    const multi = question.type === 'multi-answerable' || question.multi_select === true;
+    return {
+      question_id: question.id,
+      index,
+      answer: multi
+        ? { kind: 'multi', value: [selected.value], selected_labels: [selected.label], selected_values: [selected.value] }
+        : { kind: 'option', value: selected.value, selected_labels: [selected.label], selected_values: [selected.value] }
+    };
+  });
+  fs.writeFileSync(statePath, JSON.stringify({
+    ...record,
+    status: 'answered',
+    updated_at: new Date().toISOString(),
+    answers,
+    answer: answers[0].answer
+  }, null, 2));
+  process.stdout.write('%99\\n');
+  process.exit(0);
+}
+process.exit(0);
+`,
+        'utf-8',
+      );
+      chmodSync(fakeTmux, 0o755);
+
+      const tmuxBridge = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--objective',
+          '계산기 앱을 웹사이트 형태로 만들어줘',
+          '--mode',
+          'auto',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        {
+          cwd: root,
+          encoding: 'utf-8',
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}:${process.env.PATH || ''}`,
+            TMUX: '/tmp/fake-tmux',
+            TMUX_PANE: '%1',
+          },
+        },
+      );
+      assert.equal(tmuxBridge.status, 0, tmuxBridge.stderr || tmuxBridge.stdout);
+      const bridgePayload = JSON.parse(tmuxBridge.stdout) as {
+        ok: boolean;
+        renderer?: { renderer?: string; target?: string; return_target?: string };
+        answers: Array<{ answer: { selected_values: string[] } }>;
+      };
+      assert.equal(bridgePayload.ok, true);
+      assert.equal(bridgePayload.renderer?.renderer, 'tmux-pane');
+      assert.equal(bridgePayload.renderer?.target, '%99');
+      assert.equal(bridgePayload.renderer?.return_target, '%1');
+      assert.equal(bridgePayload.answers.length, 7);
+      assert.equal(bridgePayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
+
       const fallback = spawnSync(
         process.execPath,
         [

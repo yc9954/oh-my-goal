@@ -46,16 +46,18 @@ The payload must use canonical OMX question fields:
 - `allow_other` only when one user-supplied option is genuinely useful,
 - `answers[]` and `answers[i].answer.selected_values` as the source of truth after the answer.
 
-For the user-facing intake, prefer the bundled sequential runtime. It asks one question at a time, persists state, and displays an ambiguity score for the current question:
+For the user-facing intake, run the bundled runtime in `auto` mode first:
 
 ```sh
 node <plugin-root>/scripts/intake-question-runtime.mjs \
   --objective "<objective>" \
-  --mode sequential \
+  --mode auto \
   --json
 ```
 
-Ask only `prompt` from the JSON result, then stop. Keep `record_path` in context. When the user answers, continue with:
+In attached tmux, `auto` opens a separate arrow-key question pane and blocks until structured `answers[]` are returned. The pane ports OMX `src/question/ui.ts` behavior: ↑↓ movement, Space toggles for `multi-answerable`, Enter/→ next, and ← back. Use those answers directly and continue to gap-fill.
+
+Outside attached tmux, `auto` returns the sequential fallback with the current ambiguity score. Ask only `prompt` from the JSON result, then stop. Keep `record_path` in context. When the user answers, continue with:
 
 ```sh
 node <plugin-root>/scripts/intake-question-runtime.mjs \
@@ -66,17 +68,7 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
 ```
 
 If the result is still `status: "prompting"`, ask the next `prompt` and stop again. If the result has `ok: true`, use its `answers[]` as the approved intake answers.
-
-For an attached tmux blocking UI, the bundled runtime ports OMX `src/question/ui.ts` behavior and collects answers in a pane with ↑↓ movement, Space toggles for `multi-answerable`, Enter/→ next, and ← back:
-
-```sh
-node <plugin-root>/scripts/intake-question-runtime.mjs \
-  --objective "<objective>" \
-  --mode auto \
-  --json
-```
-
-In attached tmux, it opens a separate arrow-key question pane and returns structured answers. Outside tmux, do not fall back to a batched questionnaire unless the user explicitly asks for all questions at once. Use sequential mode first. The Markdown schema block is only a last-resort diagnostic fallback.
+Do not fall back to a batched questionnaire unless the user explicitly asks for all questions at once. The Markdown schema block is only a last-resort diagnostic fallback.
 
 For PRD/spec/planning requests, ask about:
 
