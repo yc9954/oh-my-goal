@@ -6,18 +6,29 @@ This repository is a standalone productized fork of the goal-harness work. It in
 
 ## Install & Run
 
-From GitHub now:
+Recommended first run from GitHub now:
 
 ```bash
-npx github:yc9954/oh-my-goal --help
-npx --package github:yc9954/oh-my-goal omg refine --objective "Ship this safely"
+codex --version
+npm install -g github:yc9954/oh-my-goal
+omg setup
+omg --madmax --high
 ```
 
 From npm after publishing:
 
 ```bash
-npx oh-my-goal --help
-npx -p oh-my-goal omg refine --objective "Ship this safely"
+codex --version
+npm install -g oh-my-goal
+omg setup
+omg --madmax --high
+```
+
+One-off GitHub execution is also supported:
+
+```bash
+npx --yes github:yc9954/oh-my-goal --help
+npx --yes --package github:yc9954/oh-my-goal omg refine --objective "Ship this safely"
 ```
 
 From this repository:

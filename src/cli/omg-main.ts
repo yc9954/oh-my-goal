@@ -2,10 +2,13 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GOAL_HARNESS_HELP, goalHarnessCommand } from './goal-harness.js';
+import { main as omxMain } from './index.js';
 
 export const OMG_HELP = `omg - Oh My Goal, a Codex goal-native autonomy harness
 
 Usage:
+  omg setup [--scope <project|user|auto>] [--merge-agents]
+  omg --madmax --high
   omg refine [--objective <text> | --objective-file <path>] [--json]
   omg interview [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
   omg plan [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
@@ -32,6 +35,12 @@ npx:
   npx oh-my-goal --help
   npx -p oh-my-goal omg refine --objective "Ship this safely"
 
+Recommended first run:
+  codex --version
+  npm install -g github:yc9954/oh-my-goal
+  omg setup
+  omg --madmax --high
+
 Boundary:
   OMG is a sibling product surface to omx for the goal-native harness. It keeps
   one Codex goal as the top-level objective; workers never call create_goal or
@@ -45,10 +54,42 @@ function packageVersion(): string {
   return pkg.version ?? 'unknown';
 }
 
+const GOAL_HARNESS_COMMANDS = new Set([
+  'refine',
+  'interview',
+  'plan',
+  'create',
+  'start',
+  'sync-goal',
+  'summary',
+  'next',
+  'advance',
+  'step',
+  'perturb',
+  'record-trajectory',
+  'select',
+  'team-plan',
+  'team-packet',
+  'import-worker-result',
+  'challenge',
+  'worker-instruction',
+  'gate',
+  'complete',
+  'omx-help',
+]);
+
 function translateHelp(command: string): string {
   return command === 'help' || command === '--help' || command === '-h'
     ? 'help'
     : command;
+}
+
+export function shouldDelegateOmgToOmx(args: readonly string[]): boolean {
+  const command = translateHelp(args[0] ?? 'help');
+  if (command === 'help' || command === 'version' || command === '--version' || command === '-v') return false;
+  if (command === 'status') return !args.includes('--slug');
+  if (command.startsWith('-')) return true;
+  return !GOAL_HARNESS_COMMANDS.has(command);
 }
 
 export async function main(args: string[]): Promise<void> {
@@ -63,6 +104,10 @@ export async function main(args: string[]): Promise<void> {
   }
   if (command === 'omx-help') {
     console.log(GOAL_HARNESS_HELP);
+    return;
+  }
+  if (shouldDelegateOmgToOmx(args)) {
+    await omxMain(args);
     return;
   }
 

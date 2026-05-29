@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { GOAL_HARNESS_HELP, goalHarnessCommand } from '../goal-harness.js';
 import { HELP } from '../index.js';
-import { OMG_HELP, main as goalProductMain } from '../omg-main.js';
+import { OMG_HELP, main as goalProductMain, shouldDelegateOmgToOmx } from '../omg-main.js';
 
 async function withCwd<T>(run: (cwd: string) => Promise<T>): Promise<T> {
   const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-cli-'));
@@ -54,6 +54,8 @@ describe('cli/goal-harness', () => {
     assert.match(HELP, /omx goal-harness[\s\S]*single-goal OMX-derived autonomy harness/i);
     assert.match(OMG_HELP, /Oh My Goal/);
     assert.match(OMG_HELP, /npx oh-my-goal/);
+    assert.match(OMG_HELP, /omg setup/);
+    assert.match(OMG_HELP, /omg --madmax --high/);
   });
 
   it('exposes the goal harness as the sibling omg product CLI', async () => {
@@ -65,6 +67,15 @@ describe('cli/goal-harness', () => {
     const version = await capture(() => goalProductMain(['version']));
     assert.equal(version.exitCode, undefined);
     assert.match(version.stdout.join('\n'), /^\d+\.\d+\.\d+$/);
+  });
+
+  it('routes setup and launch-style omg invocations through the OMX runtime layer', () => {
+    assert.equal(shouldDelegateOmgToOmx(['setup']), true);
+    assert.equal(shouldDelegateOmgToOmx(['--madmax', '--high']), true);
+    assert.equal(shouldDelegateOmgToOmx(['doctor']), true);
+    assert.equal(shouldDelegateOmgToOmx(['status']), true);
+    assert.equal(shouldDelegateOmgToOmx(['status', '--slug', 'run-1']), false);
+    assert.equal(shouldDelegateOmgToOmx(['refine', '--objective', 'ship safely']), false);
   });
 
   it('creates artifacts and emits a truthful Codex goal handoff', async () => {
