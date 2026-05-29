@@ -10,11 +10,13 @@ node <plugin-root>/scripts/team-runtime.mjs launch \
   --json
 ```
 
-The Team bridge ports the useful OMX Team execution surface into plugin-local state:
+The Team bridge ports the useful OMX Team execution surface into plugin-local state. `scripts/omx-team-core.mjs` owns the OMX-derived state and worker contracts; `scripts/team-runtime.mjs` is the cmux/tmux adapter.
 
 - task decomposition and role routing,
-- `.omg/runtime/team/<team>/config.json`,
-- worker `inbox.md`, `prompt.md`, `status.json`, and `result.md` paths,
+- `.omg/runtime/team/<team>/config.json` with `schema_source: "omx.team/state/v2"`,
+- `.omg/runtime/team/<team>/manifest.json` with `schema_version: 2`,
+- `.omg/runtime/team/<team>/tasks/task-<id>.json`,
+- worker `identity.json`, `inbox.md`, `prompt.md`, `status.json`, and `result.md` paths,
 - optional cmux/tmux panes when launched from an attached interactive session,
 - cmux-visible surfaces renamed by worker id and role when cmux is available,
 - `status`, `collect`, and `shutdown` commands for inspection and cleanup.

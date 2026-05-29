@@ -1,18 +1,29 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  DEFAULT_WORKERS,
+  appendEvent,
+  buildTeamExecutionPlan,
+  buildWorkerCommand,
+  materializeTeamState,
+  normalizeObjective,
+  readJson,
+  relativePath,
+  safeString,
+  sanitizeTeamName,
+  teamRuntimeRoot,
+  updateWorkerStatus,
+  workerBuckets,
+  workerRole,
+  writeJsonAtomic,
+} from './omx-team-core.mjs';
 
-const MAX_WORKERS = 8;
-const DEFAULT_WORKERS = 3;
-const ROLE_ORDER = ['architect', 'implementer', 'tester', 'critic', 'researcher', 'writer', 'replanner'];
-
-function safeString(value) {
-  return typeof value === 'string' ? value : '';
-}
+export { buildTeamExecutionPlan, sanitizeTeamName } from './omx-team-core.mjs';
 
 function parseArgs(argv) {
   const command = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'help';
@@ -95,304 +106,6 @@ Purpose:
   packets under .omg/runtime/team/<team>/ and can open visible cmux or tmux
   worker panes when launched from an attached interactive surface.
 `);
-}
-
-// Ported from OMX src/team/tmux-session.ts, adapted for plugin-local state.
-export function sanitizeTeamName(name) {
-  const lowered = safeString(name).toLowerCase();
-  const replaced = lowered
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-/, '')
-    .replace(/-$/, '');
-  const truncated = replaced.slice(0, 30).replace(/-$/, '');
-  if (truncated.trim() === '') throw new Error('sanitizeTeamName: empty after sanitization');
-  return truncated;
-}
-
-function normalizeObjective(value) {
-  return safeString(value)
-    .replace(/^\s*(?:use\s+)?\$oh-my-goal\b[:\s-]*/i, '')
-    .trim();
-}
-
-function resolveWorkerCount(value) {
-  if (!Number.isInteger(value) || value < 1) throw new Error(`worker count must be >= 1 (got ${value})`);
-  return Math.min(value, MAX_WORKERS);
-}
-
-function cleanFragment(value) {
-  return safeString(value)
-    .replace(/^\s*(?:[-*•]|\[\s?[xX]?\]|\d+[.)])\s*/, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function splitObjective(objective) {
-  const text = normalizeObjective(objective);
-  const rawLines = text
-    .split(/\r?\n/)
-    .filter(Boolean);
-  const bulletLines = rawLines
-    .filter((line) => /^\s*(?:[-*•]|\[\s?[xX]?\]|\d+[.)])/.test(line))
-    .map(cleanFragment);
-  if (bulletLines.length > 1) return bulletLines.map(cleanFragment);
-
-  const numbered = [...text.matchAll(/(?:^|\s)\d+[.)]\s+(.+?)(?=\s+\d+[.)]\s+|$)/gs)]
-    .map((match) => cleanFragment(match[1]))
-    .filter(Boolean);
-  if (numbered.length > 1) return numbered;
-
-  const semicolon = text.split(/[;\n]+/).map(cleanFragment).filter(Boolean);
-  if (semicolon.length > 1) return semicolon;
-
-  const comma = text
-    .replace(/\s+\band\b\s+/gi, ', ')
-    .replace(/\s+\b그리고\b\s+/g, ', ')
-    .split(/\s*,\s+/)
-    .map(cleanFragment)
-    .filter(Boolean);
-  if (comma.length > 1 && comma.every((part) => part.split(/\s+/).length <= 12)) return comma;
-
-  return [text];
-}
-
-function roleFor(text) {
-  const value = safeString(text).toLowerCase();
-  if (/(test|verify|validation|qa|coverage|검증|테스트)/i.test(value)) return 'tester';
-  if (/\b(?:critic|review|risk|audit|challenge|basin)\b|local optimum|반박|리뷰|위험/i.test(value)) return 'critic';
-  if (/(research|analy[sz]e|investigate|study|survey|조사|연구|분석)/i.test(value)) return 'researcher';
-  if (/(doc|readme|prd|spec|write|문서|기획|요구사항)/i.test(value)) return 'writer';
-  if (/(architect|design|plan|structure|설계|구조|계획)/i.test(value)) return 'architect';
-  if (/(replan|fallback|rollback|revise|수정|재계획)/i.test(value)) return 'replanner';
-  if (/(implement|build|fix|code|refactor|ship|개발|구현|수정)/i.test(value)) return 'implementer';
-  return 'team-executor';
-}
-
-function aspectSubtasks(objective, workerCount) {
-  const aspects = [
-    ['Plan', 'architect', `Design the execution path and identify repo constraints for: ${objective}`],
-    ['Implement', 'implementer', `Implement the smallest useful path for: ${objective}`],
-    ['Verify', 'tester', `Find and run verification evidence for: ${objective}`],
-    ['Critique', 'critic', `Challenge assumptions, local-optimum risk, and completion evidence for: ${objective}`],
-    ['Research', 'researcher', `Inspect prior art, source context, or unknowns for: ${objective}`],
-    ['Document', 'writer', `Document the resulting contract, usage, and residual risks for: ${objective}`],
-    ['Replan', 'replanner', `Prepare a fallback trajectory if the main path stalls for: ${objective}`],
-  ];
-  return aspects.slice(0, workerCount).map(([subject, role, description], index) => ({
-    id: `task-${index + 1}`,
-    subject,
-    description,
-    role,
-  }));
-}
-
-export function buildTeamExecutionPlan(objective, requestedWorkers = DEFAULT_WORKERS, explicitWorkers = false) {
-  const normalizedObjective = normalizeObjective(objective);
-  if (!normalizedObjective) throw new Error('Missing objective.');
-  const workerCount = resolveWorkerCount(requestedWorkers);
-  const fragments = splitObjective(normalizedObjective);
-  let tasks = fragments.map((fragment, index) => ({
-    id: `task-${index + 1}`,
-    subject: fragment.split(/\s+/).slice(0, 8).join(' '),
-    description: fragment,
-    role: roleFor(fragment),
-  }));
-
-  if (explicitWorkers && tasks.length <= 1 && workerCount > 1) {
-    tasks = aspectSubtasks(normalizedObjective, workerCount);
-  }
-  if (explicitWorkers && tasks.length < workerCount) {
-    const existingRoles = new Set(tasks.map((task) => task.role));
-    for (const role of ROLE_ORDER) {
-      if (tasks.length >= workerCount) break;
-      if (existingRoles.has(role)) continue;
-      tasks.push({
-        id: `task-${tasks.length + 1}`,
-        subject: `${role} support`,
-        description: `Provide ${role} evidence for: ${normalizedObjective}`,
-        role,
-      });
-      existingRoles.add(role);
-    }
-  }
-
-  const effectiveWorkerCount = explicitWorkers ? workerCount : Math.min(workerCount, Math.max(1, tasks.length));
-  const assignedTasks = tasks.map((task, index) => ({
-    ...task,
-    owner: `worker-${(index % effectiveWorkerCount) + 1}`,
-  }));
-
-  return {
-    objective: normalizedObjective,
-    worker_count: effectiveWorkerCount,
-    tasks: assignedTasks,
-  };
-}
-
-function teamRuntimeRoot(cwd, teamName) {
-  return join(cwd, '.omg', 'runtime', 'team', teamName);
-}
-
-function relativePath(cwd, path) {
-  return relative(cwd, path).replace(/\\/g, '/');
-}
-
-async function writeJsonAtomic(path, value) {
-  await mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(value, null, 2), 'utf-8');
-  await rename(tmp, path);
-}
-
-async function readJson(path) {
-  return JSON.parse(await readFile(path, 'utf-8'));
-}
-
-async function appendEvent(root, event) {
-  await mkdir(root, { recursive: true });
-  const path = join(root, 'events.ndjson');
-  const existing = existsSync(path) ? await readFile(path, 'utf-8') : '';
-  await writeFile(path, `${existing}${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`, 'utf-8');
-}
-
-function workerBuckets(plan) {
-  const buckets = new Map();
-  for (let index = 1; index <= plan.worker_count; index += 1) {
-    buckets.set(`worker-${index}`, []);
-  }
-  for (const task of plan.tasks) {
-    if (!buckets.has(task.owner)) buckets.set(task.owner, []);
-    buckets.get(task.owner).push(task);
-  }
-  return buckets;
-}
-
-function workerRole(tasks, index) {
-  const firstRole = tasks[0]?.role;
-  if (firstRole) return firstRole;
-  return ROLE_ORDER[(index - 1) % ROLE_ORDER.length] || 'team-executor';
-}
-
-function renderWorkerPacket({ teamName, objective, workerId, role, tasks, resultPath, cwd }) {
-  const taskLines = tasks.length > 0
-    ? tasks.map((task) => `- ${task.id} (${task.role}): ${task.description}`)
-    : [`- Provide ${role} evidence for: ${objective}`];
-  const relResult = relativePath(cwd, resultPath);
-  return [
-    '# Oh My Goal Worker Packet',
-    '',
-    `Team: ${teamName}`,
-    `Worker: ${workerId}`,
-    `Role: ${role}`,
-    `Objective: ${objective}`,
-    '',
-    'Tasks:',
-    ...taskLines,
-    '',
-    'Context files:',
-    '- `.omg/harness/<slug>/context-index.md` when present',
-    '- `.omg/harness/<slug>/goal-prompt.md` when present',
-    '- `.omg/harness/<slug>/completion-gate.md` when present',
-    '',
-    'Boundary:',
-    '- Do not call `create_goal`.',
-    '- Do not call `update_goal`.',
-    '- Do not mark the whole mission complete.',
-    '- Return evidence only.',
-    '',
-    'Write your final evidence to:',
-    `- \`${relResult}\``,
-    '',
-    'Required result format:',
-    '- Summary:',
-    '- Evidence:',
-    '- Files or artifacts:',
-    '- Verification commands and observed output:',
-    '- Risks or blockers:',
-    '- Trajectory score 0-100:',
-    '- Novelty score 0-100:',
-    '- Recommendation: accept | reject | revise | block',
-    '',
-  ].join('\n');
-}
-
-function renderWorkerPrompt(packet) {
-  return [
-    'You are an Oh My Goal worker lane running under a leader-owned Codex goal.',
-    'Read the packet below, complete only your bounded lane, and write the required evidence file before your final response.',
-    'Never call create_goal or update_goal.',
-    '',
-    packet,
-  ].join('\n');
-}
-
-async function materializeTeamState({ cwd, teamName, objective, plan, mode, agent }) {
-  const root = teamRuntimeRoot(cwd, teamName);
-  await mkdir(root, { recursive: true });
-  const buckets = workerBuckets(plan);
-  const workers = [];
-  let index = 0;
-  for (const [workerId, tasks] of buckets.entries()) {
-    index += 1;
-    const workerDir = join(root, 'workers', workerId);
-    const resultPath = join(workerDir, 'result.md');
-    const role = workerRole(tasks, index);
-    const packet = renderWorkerPacket({ teamName, objective, workerId, role, tasks, resultPath, cwd });
-    const prompt = renderWorkerPrompt(packet);
-    await mkdir(workerDir, { recursive: true });
-    await writeFile(join(workerDir, 'inbox.md'), packet, 'utf-8');
-    await writeFile(join(workerDir, 'prompt.md'), prompt, 'utf-8');
-    await writeJsonAtomic(join(workerDir, 'status.json'), {
-      worker_id: workerId,
-      role,
-      status: 'planned',
-      tasks,
-      inbox: relativePath(cwd, join(workerDir, 'inbox.md')),
-      prompt: relativePath(cwd, join(workerDir, 'prompt.md')),
-      result: relativePath(cwd, resultPath),
-      updated_at: new Date().toISOString(),
-    });
-    workers.push({
-      worker_id: workerId,
-      role,
-      tasks,
-      pane_id: null,
-      inbox: relativePath(cwd, join(workerDir, 'inbox.md')),
-      prompt: relativePath(cwd, join(workerDir, 'prompt.md')),
-      result: relativePath(cwd, resultPath),
-      worker_dir: relativePath(cwd, workerDir),
-    });
-  }
-
-  const config = {
-    kind: 'omg.team-runtime/v1',
-    team: teamName,
-    objective,
-    cwd,
-    mode,
-    agent,
-    status: 'planned',
-    worker_count: plan.worker_count,
-    workers,
-    tasks: plan.tasks,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-  await writeJsonAtomic(join(root, 'config.json'), config);
-  await writeJsonAtomic(join(root, 'manifest.json'), {
-    team: teamName,
-    state_root: relativePath(cwd, root),
-    workers: workers.map((worker) => ({
-      worker_id: worker.worker_id,
-      role: worker.role,
-      inbox: worker.inbox,
-      prompt: worker.prompt,
-      result: worker.result,
-    })),
-  });
-  await appendEvent(root, { type: 'planned', team: teamName, worker_count: plan.worker_count });
-  return { root, config };
 }
 
 function tmux(args) {
@@ -491,42 +204,6 @@ function cmuxTargetFromNewPane(output, workspace) {
   return { pane, surface };
 }
 
-function shellQuote(value) {
-  return `'${String(value).replace(/'/g, `'\\''`)}'`;
-}
-
-function buildWorkerCommand({ cwd, agent, worker, teamName }) {
-  const promptPath = join(cwd, worker.prompt);
-  const workerDir = join(cwd, worker.worker_dir);
-  const resultPath = join(cwd, worker.result);
-  const agentCommand = safeString(agent).trim() || 'codex';
-  const title = `OMG ${worker.worker_id} ${worker.role}`;
-  const promptArg = `"$(cat ${shellQuote(promptPath)})"`;
-  const banner = `printf '\\\\033]0;%s\\\\007Oh My Goal %s (%s)\\nPacket: %s\\nResult: %s\\n\\n' ${shellQuote(title)} ${shellQuote(worker.worker_id)} ${shellQuote(worker.role)} ${shellQuote(promptPath)} ${shellQuote(resultPath)}`;
-  const runAgent = agentCommand === 'shell'
-    ? `printf 'Oh My Goal worker ready. Read %s and write %s\\n' ${shellQuote(promptPath)} ${shellQuote(resultPath)}; exec \${SHELL:-sh}`
-    : `if command -v ${shellQuote(agentCommand)} >/dev/null 2>&1; then ${shellQuote(agentCommand)} ${promptArg}; else printf 'Agent ${agentCommand} not found. Read %s and write %s\\n' ${shellQuote(promptPath)} ${shellQuote(resultPath)}; exec \${SHELL:-sh}; fi`;
-  return [
-    `cd ${shellQuote(cwd)}`,
-    `export OMG_TEAM_NAME=${shellQuote(teamName)}`,
-    `export OMG_TEAM_WORKER=${shellQuote(worker.worker_id)}`,
-    `export OMG_TEAM_WORKER_DIR=${shellQuote(workerDir)}`,
-    `export OMG_TEAM_RESULT_PATH=${shellQuote(resultPath)}`,
-    banner,
-    runAgent,
-  ].join(' && ');
-}
-
-async function updateWorkerStatus(cwd, worker, patch) {
-  const statusPath = join(cwd, worker.worker_dir, 'status.json');
-  const current = existsSync(statusPath) ? await readJson(statusPath) : {};
-  await writeJsonAtomic(statusPath, {
-    ...current,
-    ...patch,
-    updated_at: new Date().toISOString(),
-  });
-}
-
 async function launchTmuxWorkers(cwd, root, config) {
   const leaderPane = currentTmuxPane();
   const windowTarget = currentTmuxWindow();
@@ -557,7 +234,7 @@ async function launchTmuxWorkers(cwd, root, config) {
     if (!paneId?.startsWith('%')) throw new Error(`failed to capture pane id for ${worker.worker_id}`);
     if (index === 0) rightStackRoot = paneId;
     panes.push({ ...worker, pane_id: paneId });
-    await updateWorkerStatus(cwd, worker, { status: 'launched', pane_id: paneId });
+    await updateWorkerStatus(cwd, worker, { state: 'running', status: 'launched', pane_id: paneId });
   }
   tmux(['select-layout', '-t', windowTarget, 'main-vertical']);
   const launched = {
@@ -625,6 +302,7 @@ async function launchCmuxWorkers(cwd, root, config) {
     };
     workers.push(launchedWorker);
     await updateWorkerStatus(cwd, worker, {
+      state: 'running',
       status: 'launched',
       pane_id: launchedWorker.pane_id,
       surface_id: launchedWorker.surface_id,
@@ -786,6 +464,7 @@ async function commandStatus(args) {
       surface_id: worker.surface_id || status.surface_id || null,
       title: worker.title || status.title || null,
       renderer: worker.renderer || status.renderer || null,
+      state: status.state || null,
       status: status.status || 'unknown',
       result_exists: existsSync(resultPath),
       inbox: worker.inbox,

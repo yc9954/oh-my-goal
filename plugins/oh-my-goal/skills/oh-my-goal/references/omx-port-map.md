@@ -18,8 +18,10 @@ Oh My Goal must port from OMX source-of-truth modules, then adapt only the trans
 ## Team Orchestration
 
 - Source of truth: `src/team/tmux-session.ts`, `src/team/runtime.ts`, `src/team/runtime-cli.ts`, `src/team/state/*`, `src/team/worker-bootstrap.ts`.
+- Plugin core port: `plugins/oh-my-goal/scripts/omx-team-core.mjs`.
 - Plugin bridge: `plugins/oh-my-goal/scripts/team-runtime.mjs`.
 - Rule: workers are evidence lanes. They never call `create_goal` or `update_goal`; the leader owns the single Codex goal.
+- State rule: keep `config.json`, `manifest.json`, task files, worker identity, worker status, and worker prompt shape aligned with the OMX Team contracts. Do not put these contracts in cmux/tmux renderer code.
 - Transport adaptation: tmux behavior should follow OMX where available. cmux is a transport adapter with equivalent visible panes, worker titles, durable packets, and result files.
 
 ## Harness Artifacts

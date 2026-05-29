@@ -13,6 +13,7 @@ const generatorPath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'create-har
 const questionEnginePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-engine.mjs');
 const questionCorePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'omx-question-core.mjs');
 const questionRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-runtime.mjs');
+const teamCorePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'omx-team-core.mjs');
 const teamRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'team-runtime.mjs');
 
 function readSkillRelative(path: string): string {
@@ -905,7 +906,14 @@ process.exit(0);
   });
 
   it('ports the useful OMX Team surface into an optional plugin team runtime', () => {
+    const teamCoreSource = readFileSync(teamCorePath, 'utf-8');
     const teamRuntimeSource = readFileSync(teamRuntimePath, 'utf-8');
+    assert.match(teamCoreSource, /Ported from the OMX Team contracts/);
+    assert.match(teamCoreSource, /src\/team\/tmux-session\.ts/);
+    assert.match(teamCoreSource, /schema_source: 'omx\.team\/state\/v2'/);
+    assert.match(teamCoreSource, /schema_version: 2/);
+    assert.match(teamCoreSource, /OMX_TEAM_STATE_ROOT/);
+    assert.match(teamRuntimeSource, /omx-team-core\.mjs/);
     assert.match(teamRuntimeSource, /launchCmuxWorkers/);
     assert.match(teamRuntimeSource, /CMUX_WORKSPACE_ID/);
     assert.match(teamRuntimeSource, /cmux-pane/);
@@ -960,11 +968,56 @@ process.exit(0);
         status: string;
         team: string;
         state_root: string;
-        workers: Array<{ inbox: string; prompt: string; result: string }>;
+        workers: Array<{ worker_id: string; inbox: string; prompt: string; result: string }>;
       };
       assert.equal(launchPayload.ok, true);
       assert.equal(launchPayload.status, 'planned');
       assert.equal(launchPayload.state_root, '.omg/runtime/team/implement-ui-write-tests-updat');
+
+      const stateRoot = join(cwd, launchPayload.state_root);
+      const config = JSON.parse(readFileSync(join(stateRoot, 'config.json'), 'utf-8')) as {
+        schema_source: string;
+        name: string;
+        task: string;
+      };
+      assert.equal(config.schema_source, 'omx.team/state/v2');
+      assert.equal(config.name, launchPayload.team);
+      assert.match(config.task, /implement UI/);
+
+      const manifest = JSON.parse(readFileSync(join(stateRoot, 'manifest.json'), 'utf-8')) as {
+        schema_version: number;
+        name: string;
+        leader: { worker_id: string };
+        workers: Array<{ name: string; assigned_tasks: string[] }>;
+      };
+      assert.equal(manifest.schema_version, 2);
+      assert.equal(manifest.name, launchPayload.team);
+      assert.equal(manifest.leader.worker_id, 'leader-fixed');
+      assert.equal(manifest.workers[0]?.name, 'worker-1');
+      assert.deepEqual(manifest.workers[0]?.assigned_tasks, ['1']);
+
+      const task = JSON.parse(readFileSync(join(stateRoot, 'tasks', 'task-1.json'), 'utf-8')) as {
+        id: string;
+        status: string;
+        owner: string;
+      };
+      assert.equal(task.id, '1');
+      assert.equal(task.status, 'pending');
+      assert.equal(task.owner, 'worker-1');
+
+      const identity = JSON.parse(
+        readFileSync(join(stateRoot, 'workers', 'worker-1', 'identity.json'), 'utf-8'),
+      ) as {
+        name: string;
+        index: number;
+        role: string;
+        assigned_tasks: string[];
+      };
+      assert.equal(identity.name, 'worker-1');
+      assert.equal(identity.index, 1);
+      assert.equal(identity.role, 'implementer');
+      assert.deepEqual(identity.assigned_tasks, ['1']);
+
       for (const worker of launchPayload.workers) {
         assert.ok(existsSync(join(cwd, worker.inbox)), `${worker.inbox} should exist`);
         assert.ok(existsSync(join(cwd, worker.prompt)), `${worker.prompt} should exist`);
@@ -978,10 +1031,11 @@ process.exit(0);
       );
       assert.equal(status.status, 0, status.stderr || status.stdout);
       const statusPayload = JSON.parse(status.stdout) as {
-        workers: Array<{ status: string; result_exists: boolean }>;
+        workers: Array<{ status: string; state: string; result_exists: boolean }>;
       };
       assert.equal(statusPayload.workers.length, 3);
       assert.equal(statusPayload.workers[0]?.status, 'planned');
+      assert.equal(statusPayload.workers[0]?.state, 'idle');
       assert.equal(statusPayload.workers[0]?.result_exists, false);
 
       writeFileSync(
