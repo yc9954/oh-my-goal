@@ -7,6 +7,8 @@ description: Codex-native goal harness bootstrap. Use when the user wants to def
 
 Use `$oh-my-goal` to turn a vague development idea into a Codex goal-ready harness. This skill is plugin-first: do not require `omx`, `omg`, tmux, or a shell launcher.
 
+The product should still reuse the good OMX ideas: leader/worker separation, Team-style evidence lanes, worker packet templates, trajectory scoring, persistent state notes, critic pressure, and strict completion gates. The boundary is that those ideas are encoded as plugin guidance and repo-local Markdown artifacts, not as a required OMX runtime.
+
 ## Flow
 
 1. If the user has not provided an objective, ask exactly one opening question:
@@ -42,6 +44,10 @@ The required files are:
 - `harness.md` - execution lifecycle and state contract.
 - `agents.md` - leader and worker lane responsibilities.
 - `orchestration.md` - how to use subagents or sequential lanes.
+- `team-system.md` - Team-style lane protocol without requiring OMX Team.
+- `worker-packet-template.md` - reusable worker instruction/result packet.
+- `trajectory-ledger.md` - candidate path comparison table.
+- `state-ledger.md` - persistent leader-loop checkpoint log.
 - `local-optimum-pressure.md` - perturbation, critique, and basin-escape protocol.
 - `completion-gate.md` - evidence required before `update_goal({status: "complete"})`.
 
@@ -52,13 +58,23 @@ The recommended goal prompt must:
 - keep one Codex goal as the single top-level objective,
 - include the original objective, acceptance criteria, non-goals, and verification,
 - require the leader to use the harness artifacts in `.omg/harness/<slug>/`,
+- require Team-style evidence lanes when the task benefits from independent work,
 - require at least two independent trajectories before major commitment,
 - require an adversarial review and basin-escape challenge before completion,
 - state that only the leader may call `update_goal({status: "complete"})`.
 
 ## Orchestration Rules
 
-Use available Codex subagent, agent, or task tools only as evidence lanes. Workers may research, implement, test, critique, or replan, but they must not call `create_goal`, must not call `update_goal`, and must not mark the whole mission complete. If no multi-agent runtime is available, run the same lanes sequentially and record results in the harness files.
+Use available Codex subagent, agent, or task tools only as evidence lanes. Workers may research, implement, test, critique, or replan, but they must not call `create_goal`, must not call `update_goal`, and must not mark the whole mission complete. If no multi-agent runtime is available, run the same lanes sequentially and record results in `worker-packet-template.md`, `trajectory-ledger.md`, and `state-ledger.md`.
+
+Carry forward these OMX-style strengths:
+
+- **Leader owns the goal**: one session owns goal state, plan selection, and completion.
+- **Workers own evidence**: workers return facts, diffs, tests, risks, blockers, and scores.
+- **Packets over vibes**: every lane gets a task, boundary, expected output, and result template.
+- **Trajectory competition**: compare candidate paths before selecting one.
+- **Backpressure**: critic/tester/replanner lanes are first-class, not afterthoughts.
+- **Durable state**: decisions and checkpoints are written to Markdown so the Codex goal can resume from files.
 
 ## Local-Optimum Pressure
 

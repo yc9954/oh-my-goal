@@ -1,8 +1,8 @@
 interface:
   display_name: "Oh My Goal"
-  short_description: "Build a goal-ready harness."
+  short_description: "Build a team-ready goal harness."
   brand_color: "#2563EB"
-  default_prompt: "Use $oh-my-goal to interview me about what I want to build, create local harness files, and recommend the final Codex goal prompt."
+  default_prompt: "Use $oh-my-goal to interview me about what I want to build, create local harness files with team-style evidence lanes, and recommend the final Codex goal prompt."
 
 policy:
   allow_implicit_invocation: true
