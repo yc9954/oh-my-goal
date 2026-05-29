@@ -76,6 +76,17 @@ node plugins/oh-my-goal/scripts/team-runtime.mjs launch \
 
 It writes OMX-derived `.omg/runtime/team/<team>/` state through `omx-team-core.mjs`: `config.json`, `manifest.json`, task files, worker identity, worker status, inbox, prompt, and result paths. `team-runtime.mjs` then opens cmux or tmux worker panes when an interactive surface is attached. Without cmux/tmux, `--mode auto` keeps the same worker packets so Codex can run lanes sequentially.
 
+For runtime-enforced local-optimum pressure:
+
+```bash
+node plugins/oh-my-goal/scripts/pressure-runtime.mjs init \
+  --objective "implement UI, write tests, update docs" \
+  --slug example \
+  --json
+```
+
+It writes `.omg/runtime/pressure/<slug>/` state, forces evidence-backed baseline/novelty/critic trajectories, creates perturbations for repeated blockers, and blocks completion until `pressure-runtime.mjs gate` passes.
+
 ```text
 .omg/harness/<slug>/
   context-index.md
@@ -120,6 +131,7 @@ codex plugin add oh-my-goal@oh-my-goal-local
 - Writes Markdown harness files under `.omg/harness/<slug>/`.
 - Sets up leader, architect, implementer, tester, critic, and replanner lane instructions.
 - Provides an optional Team runtime bridge with OMX-derived worker state plus visible cmux/tmux worker panes.
+- Provides a pressure runtime that enforces trajectory comparison, critic pressure, perturbation, and completion gating.
 - Treats execution as trajectory search instead of premature convergence.
 - Uses optional Codex subagent/worker lanes for research, implementation, testing, critique, or replanning evidence.
 - Requires objective audit, implementation evidence, external verification, adversarial review, and basin-escape convergence checks before completion.

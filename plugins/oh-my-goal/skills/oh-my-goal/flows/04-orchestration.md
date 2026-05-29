@@ -1,6 +1,15 @@
 # Orchestration
 
-Use available Codex subagent, agent, or task tools only as evidence lanes. If visible worker lanes are useful, prefer the plugin Team bridge. Path rule: `<plugin-root>` is two directories above this skill directory, so the runtime is `<plugin-root>/scripts/team-runtime.mjs`, not `skills/oh-my-goal/scripts/team-runtime.mjs`.
+Use available Codex subagent, agent, or task tools only as evidence lanes. Before selecting a path, initialize the pressure runtime; if visible worker lanes are useful, prefer the plugin Team bridge. Path rule: `<plugin-root>` is two directories above this skill directory, so the runtimes are `<plugin-root>/scripts/pressure-runtime.mjs` and `<plugin-root>/scripts/team-runtime.mjs`, not under `skills/oh-my-goal/scripts/`.
+
+```sh
+node <plugin-root>/scripts/pressure-runtime.mjs init \
+  --objective "<bounded objective>" \
+  --slug <slug> \
+  --json
+```
+
+The pressure runtime is the local-optimum backpressure layer. It writes `.omg/runtime/pressure/<slug>/state.json`, seeds baseline/novelty/critic trajectories, records evidence-backed alternatives, tracks repeated blockers, writes perturbation artifacts, and blocks completion until the pressure gate passes.
 
 ```sh
 node <plugin-root>/scripts/team-runtime.mjs launch \
@@ -67,3 +76,9 @@ Before selecting a plan or finishing:
 5. Reject novelty unless it improves evidence against acceptance checks.
 
 Completion requires objective-to-artifact audit, implementation or research evidence, external verification output, adversarial review with blockers cleared, and a basin-escape challenge comparing alternatives.
+
+Run the runtime gate before completing:
+
+```sh
+node <plugin-root>/scripts/pressure-runtime.mjs gate --slug <slug> --evidence-json <completion-evidence-json-or-path> --json
+```

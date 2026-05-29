@@ -102,6 +102,10 @@ function teamRuntimeScriptPath() {
   return join(fileURLToPath(new URL('.', import.meta.url)), 'team-runtime.mjs');
 }
 
+function pressureRuntimeScriptPath() {
+  return join(fileURLToPath(new URL('.', import.meta.url)), 'pressure-runtime.mjs');
+}
+
 function teamRuntimeCommand({ objective, slug }) {
   return [
     'node',
@@ -115,6 +119,34 @@ function teamRuntimeCommand({ objective, slug }) {
     '3',
     '--mode',
     'auto',
+    '--json',
+  ].join(' ');
+}
+
+function pressureRuntimeInitCommand({ objective, slug, route }) {
+  return [
+    'node',
+    shellQuote(pressureRuntimeScriptPath()),
+    'init',
+    '--objective',
+    shellQuote(objective),
+    '--slug',
+    shellQuote(slug),
+    '--route',
+    shellQuote(route),
+    '--json',
+  ].join(' ');
+}
+
+function pressureRuntimeGateCommand({ slug }) {
+  return [
+    'node',
+    shellQuote(pressureRuntimeScriptPath()),
+    'gate',
+    '--slug',
+    shellQuote(slug),
+    '--evidence-json',
+    '<completion-evidence-json-or-path>',
     '--json',
   ].join(' ');
 }
@@ -171,6 +203,8 @@ function routeFor(objective, answers) {
 
 function goalPrompt({ objective, slug, route, answers }) {
   const autoTeamCommand = teamRuntimeCommand({ objective, slug });
+  const pressureInitCommand = pressureRuntimeInitCommand({ objective, slug, route });
+  const pressureGateCommand = pressureRuntimeGateCommand({ slug });
   return lines([
     `Complete the user objective: ${objective}`,
     '',
@@ -196,13 +230,17 @@ function goalPrompt({ objective, slug, route, answers }) {
     '- Treat trailing text after `$oh-my-goal` as the objective; do not ask for it again.',
     '- Start with the ambiguity map and deep-interview artifacts; preserve unresolved assumptions.',
     '- Do not ask the user to run Team runtime manually.',
+    '- Before selecting or implementing a path, automatically initialize the pressure runtime.',
+    `- Pressure init command: ${pressureInitCommand}`,
+    '- Record evidence-backed baseline, novelty, critic/tester, and replanner trajectories in `.omg/runtime/pressure/<slug>/state.json`.',
     '- Before implementation, automatically run the Team runtime auto-start command below when independent evidence lanes improve quality, the route is agent_orchestrated, or the work benefits from architect/tester/critic separation.',
     `- Auto-start command: ${autoTeamCommand}`,
     '- If the command returns `tmux_not_attached`, `cmux_unavailable`, or another planned-state response, continue from the generated `.omg/runtime/team/<team>/` worker packets sequentially.',
     '- Select a trajectory only after comparing at least two materially different paths.',
     '- Use worker lanes only for evidence-producing research, implementation, testing, critique, or replanning.',
     '- Workers must not call create_goal, update_goal, or mark the mission complete.',
-    '- Apply the local-optimum pressure protocol before major commitments and before completion.',
+    '- Apply the pressure runtime before major commitments and before completion; do not rely only on prose notes.',
+    `- Pressure gate command before completion: ${pressureGateCommand}`,
     '- Only the leader may call update_goal({status: "complete"}) after the completion gate passes.',
     '',
     `Recommended harness route: ${route}`,
@@ -267,6 +305,10 @@ function executionSpec({ objective, slug, route, answers }) {
 function artifactMap({ objective, slug, route, answers }) {
   const prompt = goalPrompt({ objective, slug, route, answers });
   const autoTeamCommand = teamRuntimeCommand({ objective, slug });
+  const pressureInitCommand = pressureRuntimeInitCommand({ objective, slug, route });
+  const pressureGateCommand = pressureRuntimeGateCommand({ slug });
+  const pressureStatusCommand = `node ${shellQuote(pressureRuntimeScriptPath())} status --slug ${shellQuote(slug)} --json`;
+  const pressureTeamCommand = `node ${shellQuote(pressureRuntimeScriptPath())} team-command --slug ${shellQuote(slug)} --json`;
   return {
     'context-index.md': lines([
       `# Oh My Goal Harness: ${slug}`,
@@ -373,15 +415,15 @@ function artifactMap({ objective, slug, route, answers }) {
       '3. Batch independent high-leverage questions into one structured intake round when possible.',
       '4. Run gap-fill passes after answers: assimilation, residual critical-gap scan, then follow-up questions until ambiguity is low enough.',
       '5. Create or reuse one Codex goal with the prompt in `goal-prompt.md`.',
-      '6. Read `runtime-commands.md` and auto-start Team runtime when independent lanes improve quality.',
-      '7. Record candidate trajectories before selecting a plan.',
+      '6. Read `runtime-commands.md` and initialize pressure runtime before selecting a path.',
+      '7. Auto-start Team runtime when independent lanes improve quality.',
       '8. Execute the selected trajectory with evidence checkpoints.',
       '9. Add worker lanes only when they create independent evidence.',
       '10. Give every worker a packet from `worker-packet-template.md`.',
       '11. Record candidate paths in `trajectory-ledger.md`.',
       '12. Checkpoint leader decisions in `state-ledger.md`.',
-      '13. Run local-optimum pressure before late completion.',
-      '14. Complete only after the gate in `completion-gate.md` passes.',
+      '13. Run pressure runtime gate before late completion.',
+      '14. Complete only after both `completion-gate.md` and pressure runtime gate pass.',
       '',
       'State convention:',
       '- Append leader notes and evidence to these Markdown files.',
@@ -419,6 +461,35 @@ function artifactMap({ objective, slug, route, answers }) {
       '# Runtime Commands',
       '',
       'These commands are for the Codex goal leader. The user should not need to run them manually.',
+      '',
+      '## Pressure Runtime Auto-Start',
+      '',
+      'Run this before selecting or implementing a path. It creates `.omg/runtime/pressure/' + slug + '/state.json` and seeds baseline, novelty, and critic trajectories that must later receive evidence.',
+      '',
+      '```sh',
+      pressureInitCommand,
+      '```',
+      '',
+      'Inspect pressure state:',
+      '',
+      '```sh',
+      pressureStatusCommand,
+      pressureTeamCommand,
+      '```',
+      '',
+      'Record evidence-backed trajectories as work proceeds:',
+      '',
+      '```sh',
+      `node ${shellQuote(pressureRuntimeScriptPath())} record --slug ${shellQuote(slug)} --id T001-baseline --summary "<baseline path>" --evidence "<files/commands/observations>" --score <0-100> --novelty-score 10 --json`,
+      `node ${shellQuote(pressureRuntimeScriptPath())} record --slug ${shellQuote(slug)} --id T002-novelty --source worker --role replanner --summary "<different path>" --evidence "<files/commands/observations>" --score <0-100> --novelty-score 70 --json`,
+      `node ${shellQuote(pressureRuntimeScriptPath())} select --slug ${shellQuote(slug)} --trajectory-id <id> --evidence "<why this path beats alternatives>" --json`,
+      '```',
+      '',
+      'Before completion, run the pressure gate with the same evidence JSON used for the completion audit:',
+      '',
+      '```sh',
+      pressureGateCommand,
+      '```',
       '',
       '## Team Runtime Auto-Start',
       '',
@@ -468,8 +539,11 @@ function artifactMap({ objective, slug, route, answers }) {
       'Auto-start command:',
       '',
       '```sh',
+      pressureInitCommand,
       autoTeamCommand,
       '```',
+      '',
+      'The pressure runtime decides whether the apparent best path has enough independent evidence. Team runtime supplies optional visible worker lanes for that evidence.',
       '',
       'If the runtime reports `tmux_not_attached`, `cmux_unavailable`, or another planned-state response, use the generated `.omg/runtime/team/' + slug + '/workers/<worker>/prompt.md` packets sequentially.',
       '',
@@ -588,12 +662,34 @@ function artifactMap({ objective, slug, route, answers }) {
     'local-optimum-pressure.md': lines([
       '# Local-Optimum Pressure',
       '',
-      'The harness treats execution as search, not immediate convergence.',
+      'The harness treats execution as search, not immediate convergence. Runtime state is authoritative; do not rely only on this prose file.',
+      '',
+      'Pressure runtime:',
+      '',
+      '```sh',
+      pressureInitCommand,
+      pressureStatusCommand,
+      pressureTeamCommand,
+      pressureGateCommand,
+      '```',
+      '',
+      'Runtime artifacts:',
+      '- `.omg/runtime/pressure/' + slug + '/state.json`',
+      '- `.omg/runtime/pressure/' + slug + '/trajectory-ledger.md`',
+      '- `.omg/runtime/pressure/' + slug + '/pressure-report.md`',
+      '- `.omg/runtime/pressure/' + slug + '/gates/<gate>.json`',
       '',
       'Required pressure points:',
       '- before plan selection: compare baseline, persistent, team-assisted, and novelty-seeking trajectories.',
       '- after repeated blockers: perturb the constraints and ask for a disconfirming probe.',
       '- before completion: run critic review and basin-escape challenge.',
+      '',
+      'Runtime gate requirements:',
+      '- one accepted active trajectory with evidence.',
+      '- at least two evidence-backed independent trajectories.',
+      '- at least one critic, tester, or replanner pressure trajectory.',
+      '- no repeated blocker without perturbation.',
+      '- completion evidence includes objective audit, implementation evidence, external verification, adversarial review, and convergence challenge.',
       '',
       'Basin-escape challenge:',
       '1. Restate the current solution and why it seems complete.',
@@ -615,6 +711,13 @@ function artifactMap({ objective, slug, route, answers }) {
       '- Critic review found no unresolved blocker.',
       '- Basin-escape challenge compared at least two alternatives.',
       '- Remaining non-goals are still out of scope.',
+      '- Pressure runtime gate passed.',
+      '',
+      'Pressure gate command:',
+      '',
+      '```sh',
+      pressureGateCommand,
+      '```',
       '',
       'Completion evidence template:',
       '',

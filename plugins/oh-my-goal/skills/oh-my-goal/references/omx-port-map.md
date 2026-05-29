@@ -24,6 +24,13 @@ Oh My Goal must port from OMX source-of-truth modules, then adapt only the trans
 - State rule: keep `config.json`, `manifest.json`, task files, worker identity, worker status, and worker prompt shape aligned with the OMX Team contracts. Do not put these contracts in cmux/tmux renderer code.
 - Transport adaptation: tmux behavior should follow OMX where available. cmux is a transport adapter with equivalent visible panes, worker titles, durable packets, and result files.
 
+## Local-Optimum Pressure
+
+- Source of truth: `src/goal-harness/policy.ts`, `src/goal-harness/runtime.ts`, `src/goal-harness/perturbation.ts`, and the goal-harness completion gate.
+- Plugin runtime: `plugins/oh-my-goal/scripts/pressure-runtime.mjs`.
+- Rule: pressure must be runtime-enforced, not only Markdown prose. Completion is blocked until there is an accepted evidence-backed trajectory, at least two independent evidence-backed trajectories, critic/tester/replanner pressure evidence, no unresolved repeated blocker, and passing completion evidence.
+- Team connection: pressure runtime creates the search contract; Team runtime provides optional visible worker lanes to produce independent evidence.
+
 ## Harness Artifacts
 
 - Source of truth: OMX goal/team/deep-interview contracts plus Codex goal constraints.

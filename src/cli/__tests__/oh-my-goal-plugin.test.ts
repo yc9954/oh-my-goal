@@ -15,6 +15,7 @@ const questionCorePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'omx-que
 const questionRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-runtime.mjs');
 const teamCorePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'omx-team-core.mjs');
 const teamRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'team-runtime.mjs');
+const pressureRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'pressure-runtime.mjs');
 
 function readSkillRelative(path: string): string {
   return readFileSync(join(skillRoot, path), 'utf-8');
@@ -37,6 +38,7 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(skill, /cmux/i);
     assert.match(skill, /ambiguity score/i);
     assert.match(skill, /team-runtime\.mjs/);
+    assert.match(skill, /pressure-runtime\.mjs/);
     assert.match(skill, /runtime-commands\.md/);
     assert.match(skill, /two levels above this skill directory/i);
     assert.match(skill, /Do not look for scripts under `skills\/oh-my-goal\/scripts\/`/);
@@ -105,12 +107,14 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(orchestration, /Momus/i);
     assert.match(orchestration, /Oracle/i);
     assert.match(orchestration, /team-runtime\.mjs/i);
-    assert.match(orchestration, /not `skills\/oh-my-goal\/scripts\/team-runtime\.mjs`/);
+    assert.match(orchestration, /pressure-runtime\.mjs/i);
+    assert.match(orchestration, /not under `skills\/oh-my-goal\/scripts\/`/);
     assert.match(orchestration, /tmux panes/i);
     assert.match(orchestration, /cmux tree/);
     assert.match(orchestration, /read-screen/);
     assert.match(orchestration, /collect/i);
     assert.match(orchestration, /Local-Optimum Pressure/i);
+    assert.match(orchestration, /pressure gate/i);
 
     const firstTurnTemplate = readSkillRelative('templates/first-turn-response.md');
     assert.match(firstTurnTemplate, /Stop immediately/i);
@@ -1145,6 +1149,191 @@ process.exit(0);
     }
   });
 
+  it('enforces local-optimum pressure with trajectory evidence and a runtime gate', () => {
+    const pressureSource = readFileSync(pressureRuntimePath, 'utf-8');
+    assert.match(pressureSource, /omx\.goal-harness\/runtime\+perturbation/);
+    assert.match(pressureSource, /buildAnnealingChallenge/);
+    assert.match(pressureSource, /at least two evidence-backed trajectories/);
+    assert.match(pressureSource, /critic, tester, or replanner pressure evidence/);
+
+    const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-pressure-'));
+    try {
+      const init = spawnSync(
+        process.execPath,
+        [
+          pressureRuntimePath,
+          'init',
+          '--objective',
+          'build calculator website',
+          '--slug',
+          'calculator',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(init.status, 0, init.stderr || init.stdout);
+      const initPayload = JSON.parse(init.stdout) as {
+        ok: boolean;
+        slug: string;
+        state: string;
+        team_command: string;
+      };
+      assert.equal(initPayload.ok, true);
+      assert.equal(initPayload.slug, 'calculator');
+      assert.match(initPayload.team_command, /team-runtime\.mjs' launch/);
+      assert.ok(existsSync(join(cwd, initPayload.state)));
+
+      const earlyGate = spawnSync(
+        process.execPath,
+        [
+          pressureRuntimePath,
+          'gate',
+          '--slug',
+          'calculator',
+          '--cwd',
+          cwd,
+          '--evidence-json',
+          JSON.stringify({
+            actor: 'leader',
+            objectiveAudit: 'mapped',
+            implementationEvidence: ['index.html'],
+            externalVerification: [{ command: 'node test', status: 'pass', evidence: 'passed' }],
+            adversarialReview: { status: 'clear', evidence: 'critic clear' },
+            convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'compared' },
+          }),
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(earlyGate.status, 0, earlyGate.stderr || earlyGate.stdout);
+      const earlyGatePayload = JSON.parse(earlyGate.stdout) as {
+        ok: boolean;
+        gate: { missing: string[] };
+      };
+      assert.equal(earlyGatePayload.ok, false);
+      assert.ok(earlyGatePayload.gate.missing.includes('selected active trajectory'));
+      assert.ok(earlyGatePayload.gate.missing.includes('at least two evidence-backed trajectories'));
+
+      const baseline = spawnSync(
+        process.execPath,
+        [
+          pressureRuntimePath,
+          'record',
+          '--slug',
+          'calculator',
+          '--cwd',
+          cwd,
+          '--id',
+          'T001-baseline',
+          '--summary',
+          'static HTML calculator baseline',
+          '--evidence',
+          'index.html can implement core operations',
+          '--score',
+          '72',
+          '--novelty-score',
+          '10',
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(baseline.status, 0, baseline.stderr || baseline.stdout);
+
+      const novelty = spawnSync(
+        process.execPath,
+        [
+          pressureRuntimePath,
+          'record',
+          '--slug',
+          'calculator',
+          '--cwd',
+          cwd,
+          '--id',
+          'T002-novelty',
+          '--source',
+          'worker',
+          '--role',
+          'replanner',
+          '--summary',
+          'keyboard-first interaction trajectory',
+          '--evidence',
+          'replanner compared keyboard-first path against click-only baseline',
+          '--score',
+          '84',
+          '--novelty-score',
+          '75',
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(novelty.status, 0, novelty.stderr || novelty.stdout);
+
+      const selected = spawnSync(
+        process.execPath,
+        [
+          pressureRuntimePath,
+          'select',
+          '--slug',
+          'calculator',
+          '--cwd',
+          cwd,
+          '--trajectory-id',
+          'T002-novelty',
+          '--evidence',
+          'novelty path gives better acceptance coverage while preserving scope',
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(selected.status, 0, selected.stderr || selected.stdout);
+
+      const passingGate = spawnSync(
+        process.execPath,
+        [
+          pressureRuntimePath,
+          'gate',
+          '--slug',
+          'calculator',
+          '--cwd',
+          cwd,
+          '--evidence-json',
+          JSON.stringify({
+            actor: 'leader',
+            objectiveAudit: 'mapped',
+            implementationEvidence: ['index.html'],
+            externalVerification: [{ command: 'node test', status: 'pass', evidence: 'passed' }],
+            adversarialReview: { status: 'clear', evidence: 'critic clear' },
+            convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'baseline versus novelty' },
+          }),
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(passingGate.status, 0, passingGate.stderr || passingGate.stdout);
+      const passingGatePayload = JSON.parse(passingGate.stdout) as {
+        ok: boolean;
+        gate: { allowed: boolean; missing: string[]; blockers: string[] };
+      };
+      assert.equal(passingGatePayload.ok, true);
+      assert.equal(passingGatePayload.gate.allowed, true);
+      assert.deepEqual(passingGatePayload.gate.missing, []);
+      assert.deepEqual(passingGatePayload.gate.blockers, []);
+
+      const state = JSON.parse(readFileSync(join(cwd, '.omg/runtime/pressure/calculator/state.json'), 'utf-8')) as {
+        active_trajectory_id: string;
+        gates: unknown[];
+      };
+      assert.equal(state.active_trajectory_id, 'T002-novelty');
+      assert.equal(state.gates.length, 2);
+      assert.ok(existsSync(join(cwd, '.omg/runtime/pressure/calculator/trajectory-ledger.md')));
+      assert.ok(existsSync(join(cwd, '.omg/runtime/pressure/calculator/pressure-report.md')));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it('requires an explicit completed interview before accepting supplied answers', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-plugin-'));
     try {
@@ -1245,6 +1434,8 @@ process.exit(0);
       assert.doesNotMatch(goalPrompt, /Complete the user objective: \$oh-my-goal/);
       assert.match(goalPrompt, /runtime-commands\.md/);
       assert.match(goalPrompt, /Do not ask the user to run Team runtime manually/);
+      assert.match(goalPrompt, /Pressure init command: node '.+pressure-runtime\.mjs' init/);
+      assert.match(goalPrompt, /Pressure gate command before completion: node '.+pressure-runtime\.mjs' gate/);
       assert.match(goalPrompt, /Auto-start command: node '.+team-runtime\.mjs' launch/);
       assert.match(goalPrompt, /tmux_not_attached/);
       assert.match(executionSpec, /# Execution Spec/);
@@ -1254,6 +1445,9 @@ process.exit(0);
       assert.match(questionnaire, /Batch independent high-leverage questions/i);
       assert.match(questionnaire, /Gap-fill contract/i);
       assert.match(runtimeCommands, /Team Runtime Auto-Start/);
+      assert.match(runtimeCommands, /Pressure Runtime Auto-Start/);
+      assert.match(runtimeCommands, /pressure-runtime\.mjs' init/);
+      assert.match(runtimeCommands, /pressure-runtime\.mjs' gate/);
       assert.match(runtimeCommands, /CMUX Visibility/);
       assert.match(runtimeCommands, /cmux tree/);
       assert.match(runtimeCommands, /read-screen/);
