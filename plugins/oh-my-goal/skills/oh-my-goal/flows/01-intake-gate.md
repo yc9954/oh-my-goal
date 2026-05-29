@@ -28,7 +28,23 @@ Do not show a long analysis dump. Ask only the independent high-leverage questio
 
 ## Structured Intake
 
-Batch questions into one structured form when the surface supports it. When structured input is unavailable, use `templates/intake-fallback.md` and wait for one user reply.
+Build the question round with the bundled OMX-derived question engine:
+
+```sh
+node <plugin-root>/scripts/intake-question-engine.mjs \
+  --objective "<objective>" \
+  --format payload
+```
+
+The payload must use canonical OMX question fields:
+
+- `questions[]` for the batched round,
+- `type: "single-answerable"` for mutually exclusive choices,
+- `type: "multi-answerable"` for coexisting constraints or non-goals,
+- `allow_other` only when one user-supplied option is genuinely useful,
+- `answers[]` and `answers[i].answer.selected_values` as the source of truth after the answer.
+
+If attached-tmux OMX rendering is available, pass the payload to `omx question --input '<json>' --json`. Outside tmux, use native structured input when available. When structured input is unavailable, render the same payload with `--format markdown`, use `templates/intake-fallback.md` as the output shape, and wait for one user reply.
 
 For PRD/spec/planning requests, ask about:
 

@@ -2,6 +2,12 @@
 
 Use this shape for `INTAKE_PENDING`. The wording can be adapted, but the order and stop behavior should not change.
 
+Generate the question list from:
+
+```sh
+node <plugin-root>/scripts/intake-question-engine.mjs --objective "<objective>" --format markdown
+```
+
 ```md
 I will use Oh My Goal intake for: <objective>
 

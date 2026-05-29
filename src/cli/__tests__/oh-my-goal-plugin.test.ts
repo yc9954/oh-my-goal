@@ -9,6 +9,7 @@ const root = process.cwd();
 const skillRoot = join(root, 'plugins', 'oh-my-goal', 'skills', 'oh-my-goal');
 const skillPath = join(skillRoot, 'SKILL.md');
 const generatorPath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'create-harness.mjs');
+const questionEnginePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-engine.mjs');
 
 function readSkillRelative(path: string): string {
   return readFileSync(join(skillRoot, path), 'utf-8');
@@ -23,8 +24,11 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(skill, /FLOW\.md/);
     assert.match(skill, /flows\/00-entrypoint\.md/);
     assert.match(skill, /Do not create harness files/i);
+    assert.match(skill, /intake-question-engine\.mjs/);
+    assert.match(skill, /questions\[\]/);
+    assert.match(skill, /selected_values/);
     assert.match(skill, /--interview-complete/i);
-    assert.ok(skill.length < 2600, 'SKILL.md should stay a compact router');
+    assert.ok(skill.length < 3200, 'SKILL.md should stay a compact router');
   });
 
   it('splits the workflow into explicit flow, template, and reference files', () => {
@@ -48,7 +52,7 @@ describe('oh-my-goal plugin contract', () => {
     const topFlow = readSkillRelative('FLOW.md');
     assert.match(topFlow, /Phase Router/i);
     assert.match(topFlow, /INTAKE_PENDING/);
-    assert.match(topFlow, /create files, run generator, code, create goal/i);
+    assert.match(topFlow, /create files, run harness generator, code, create goal/i);
     assert.match(topFlow, /templates\/first-turn-response\.md/);
 
     const flow = readSkillRelative('flows/00-entrypoint.md');
@@ -59,7 +63,10 @@ describe('oh-my-goal plugin contract', () => {
 
     const intake = readSkillRelative('flows/01-intake-gate.md');
     assert.match(intake, /ambiguity map/i);
-    assert.match(intake, /Batch questions into one structured form/i);
+    assert.match(intake, /intake-question-engine\.mjs/i);
+    assert.match(intake, /questions\[\]/i);
+    assert.match(intake, /multi-answerable/i);
+    assert.match(intake, /selected_values/i);
     assert.match(intake, /Gap-Fill Passes/i);
 
     const orchestration = readSkillRelative('flows/04-orchestration.md');
@@ -71,6 +78,43 @@ describe('oh-my-goal plugin contract', () => {
     const firstTurnTemplate = readSkillRelative('templates/first-turn-response.md');
     assert.match(firstTurnTemplate, /Stop immediately/i);
     assert.match(firstTurnTemplate, /Do not add a plan/i);
+  });
+
+  it('ports the OMX question schema into the plugin intake question engine', () => {
+    const result = spawnSync(
+      process.execPath,
+      [questionEnginePath, '--objective', '계산기 앱을 웹사이트 형태로 만들어줘', '--format', 'payload'],
+      { cwd: root, encoding: 'utf-8' },
+    );
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout) as {
+      source: string;
+      questions: Array<{
+        id: string;
+        type: string;
+        multi_select: boolean;
+        options: Array<{ label: string; value: string; description?: string }>;
+      }>;
+    };
+    assert.equal(payload.source, 'oh-my-goal');
+    assert.equal(payload.questions.length, 7);
+    assert.equal(payload.questions[0]?.id, 'deliverableScope');
+    assert.equal(payload.questions[0]?.type, 'single-answerable');
+    assert.equal(payload.questions[0]?.multi_select, false);
+    assert.equal(payload.questions[6]?.id, 'nonGoals');
+    assert.equal(payload.questions[6]?.type, 'multi-answerable');
+    assert.equal(payload.questions[6]?.multi_select, true);
+    assert.equal(payload.questions[6]?.options[1]?.value, 'no-new-dependencies');
+
+    const commandResult = spawnSync(
+      process.execPath,
+      [questionEnginePath, '--objective', '계산기 앱을 웹사이트 형태로 만들어줘', '--format', 'omx-command'],
+      { cwd: root, encoding: 'utf-8' },
+    );
+    assert.equal(commandResult.status, 0, commandResult.stderr || commandResult.stdout);
+    assert.match(commandResult.stdout, /omx question --input/);
+    assert.match(commandResult.stdout, /questions/);
   });
 
   it('requires an explicit completed interview before accepting supplied answers', () => {

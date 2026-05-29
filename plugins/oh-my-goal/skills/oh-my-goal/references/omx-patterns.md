@@ -7,6 +7,7 @@ Oh My Goal preserves selected OMX behaviors without requiring the OMX runtime.
 - Parse trailing arguments as the initial objective.
 - Inspect repo context before asking facts that can be discovered.
 - Build an ambiguity map before the first question.
+- Use the canonical OMX question schema from `src/question/types.ts`: `questions[]`, `single-answerable`, `multi-answerable`, `answers[]`, and `selected_values`.
 - Ask only material questions whose answers affect scope, acceptance, verification, or handoff.
 - Record non-goals and decision boundaries explicitly.
 

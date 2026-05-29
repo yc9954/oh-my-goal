@@ -4,6 +4,11 @@ import { existsSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { join, relative } from 'node:path';
+import {
+  buildIntakeQuestionInput,
+  intakeQuestionsForObjective,
+  renderQuestionInputMarkdown,
+} from './intake-question-engine.mjs';
 
 const VALUE_FLAGS = new Set(['--objective', '--slug', '--cwd', '--answers-json', '--answers-file']);
 
@@ -68,133 +73,16 @@ function formatQuestion({ question, options }) {
   if (!options?.length) return `${question} `;
   return lines([
     question,
-    ...options.map((option, index) => `  ${index + 1}) ${option}`),
+    ...options.map((option, index) => {
+      const description = option.description ? ` - ${option.description}` : '';
+      return `  ${index + 1}) ${option.label}${description}`;
+    }),
     'Choose a number or answer in your own words: ',
   ]);
 }
 
 function renderInterviewBlock(objective) {
-  const questions = interviewQuestions(objective);
-  const example = questions.map((_, index) => `${index + 1}A`).join(' ');
-  return lines([
-    'Before I create harness files or implementation files, answer these in one reply.',
-    '',
-    ...questions.flatMap((entry, index) => [
-      `${index + 1}. ${entry.question}`,
-      ...(entry.options || []).map((option, optionIndex) => `   ${String.fromCharCode(65 + optionIndex)}) ${option}`),
-    ]),
-    '',
-    `Reply with choices or short answers, for example: ${example}.`,
-  ]);
-}
-
-function interviewQuestions(objective) {
-  const text = objective.toLowerCase();
-  const questions = [];
-  const isPlanning = /(prd|product requirements|requirements|요구사항|기획|스펙|spec)/i.test(text);
-  const isImplementation = !isPlanning && /(app|website|web\s*site|frontend|ui|page|tool|calculator|build|implement|make|create|앱|웹|웹사이트|사이트|페이지|도구|계산기|만들|구현)/i.test(text);
-  if (isPlanning) {
-    questions.push(
-      {
-        key: 'deliverableScope',
-        question: 'Which deliverable scope should this target?',
-        options: ['next-version PRD (recommended)', 'current-product PRD', 'single-feature PRD'],
-      },
-      {
-        key: 'audience',
-        question: 'Who is the primary reader?',
-        options: ['builder/PM making implementation decisions (recommended)', 'stakeholder reviewing product direction', 'Codex goal executor'],
-      },
-      {
-        key: 'sourceContext',
-        question: 'What source context should be used?',
-        options: ['repo README/docs/source plus user answers (recommended)', 'user answers only', 'repo plus external research'],
-      },
-      {
-        key: 'nonGoals',
-        question: 'What should stay out of scope?',
-        options: ['no implementation until the goal prompt is approved (recommended)', 'no broad repo refactor', 'no new dependencies'],
-      },
-      {
-        key: 'verification',
-        question: 'What should verify the result?',
-        options: ['inspect generated Markdown and run lightweight repo checks (recommended)', 'full test suite', 'manual review only'],
-      },
-      {
-        key: 'handoffTarget',
-        question: 'What should the handoff produce?',
-        options: ['goal prompt plus PRD harness (recommended)', 'PRD only', 'implementation after approval'],
-      },
-    );
-  } else if (isImplementation) {
-    questions.push(
-      {
-        key: 'deliverableScope',
-        question: 'Which implementation scope should this target?',
-        options: ['polished single-screen implementation (recommended)', 'minimal working implementation', 'full-featured implementation'],
-      },
-      {
-        key: 'stack',
-        question: 'Which stack should be used?',
-        options: ['static HTML/CSS/JS (recommended for empty folders)', 'React/Vite', 'match the existing repository stack'],
-      },
-      {
-        key: 'ux',
-        question: 'Which UX direction should guide the result?',
-        options: ['clean app UI (recommended)', 'platform-inspired UI', 'domain-specific UI'],
-      },
-      {
-        key: 'acceptance',
-        question: 'What functionality proves the implementation is complete?',
-        options: ['mouse plus keyboard behavior and core edge cases (recommended)', 'basic click-only behavior', 'history, memory, or settings included'],
-      },
-      {
-        key: 'verification',
-        question: 'What should verify the implementation?',
-        options: ['browser check plus lightweight tests when practical (recommended)', 'browser check only', 'tests only'],
-      },
-      {
-        key: 'outputMode',
-        question: 'What should happen after intake?',
-        options: ['create harness and implement after approval (recommended)', 'create harness only', 'write spec/PRD first'],
-      },
-      {
-        key: 'nonGoals',
-        question: 'What should stay out of scope?',
-        options: ['no backend, auth, or persistence unless requested (recommended)', 'no new dependencies', 'no styling beyond functional layout'],
-      },
-    );
-  }
-  if (!isPlanning && !isImplementation) {
-    questions.push(
-      {
-        key: 'acceptance',
-        question: 'What concrete output proves this is complete?',
-        options: ['repo-local document plus recommended Codex goal prompt (recommended)', 'goal prompt only', 'implemented code plus tests'],
-      },
-      {
-        key: 'nonGoals',
-        question: 'What should stay out of scope?',
-        options: ['no implementation until the goal prompt is approved (recommended)', 'no broad repo refactor', 'no new dependencies'],
-      },
-      {
-        key: 'verification',
-        question: 'What should verify the result?',
-        options: ['inspect generated Markdown and run lightweight repo checks (recommended)', 'full test suite', 'manual review only'],
-      },
-      {
-        key: 'workerLanes',
-        question: 'Which independent evidence lanes are useful?',
-        options: ['architect, researcher, critic, and tester lanes (recommended)', 'critic and tester only', 'no worker lanes'],
-      },
-      {
-        key: 'localOptimum',
-        question: 'How should local-optimum pressure work?',
-        options: ['compare baseline, novelty, critic, and replanner paths (recommended)', 'critic review only', 'skip local-optimum pressure'],
-      },
-    );
-  }
-  return questions;
+  return renderQuestionInputMarkdown(buildIntakeQuestionInput(objective));
 }
 
 function markdownTable(headers, rows) {
@@ -227,8 +115,8 @@ async function askMissing(objective, answers) {
     if (!objective.trim()) {
       objective = (await rl.question('What do you want to build or improve? ')).trim();
     }
-    for (const entry of interviewQuestions(objective)) {
-      const { key } = entry;
+    for (const entry of intakeQuestionsForObjective(objective)) {
+      const key = entry.id;
       if (typeof next[key] === 'string' && next[key].trim()) continue;
       next[key] = (await rl.question(formatQuestion(entry))).trim();
     }
@@ -340,10 +228,10 @@ function artifactMap({ objective, slug, route, answers }) {
       '',
       markdownTable(
         ['Key', 'Question', 'Recorded answer'],
-        interviewQuestions(objective).map((entry) => [
-          entry.key,
+        intakeQuestionsForObjective(objective).map((entry) => [
+          entry.id,
           entry.question.replace(/\|/g, '/'),
-          answerValue(answers, entry.key, 'Unresolved'),
+          answerValue(answers, entry.id, 'Unresolved'),
         ]),
       ),
     ]),

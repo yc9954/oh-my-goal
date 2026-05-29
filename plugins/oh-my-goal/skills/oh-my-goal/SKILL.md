@@ -32,6 +32,8 @@ This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launch
 
 ## Tool Boundary
 
+Build intake questions with `scripts/intake-question-engine.mjs`, which ports the OMX `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values` schema. Use `--format payload` for structured surfaces and `--format markdown` for the fallback block.
+
 The bundled generator may be used only after interview completion:
 
 ```sh
