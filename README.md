@@ -10,7 +10,7 @@ Recommended first run from GitHub now:
 
 ```bash
 codex --version
-npm install -g github:yc9954/oh-my-goal
+npm install -g --install-links=true github:yc9954/oh-my-goal
 omg setup
 omg start "Build the thing I actually want"
 omg --madmax --high
