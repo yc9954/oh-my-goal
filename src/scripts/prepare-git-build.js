@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -30,8 +30,14 @@ function runNpm(args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
+let installedDependencies = false;
 if (!existsSync(tscBin)) {
   runNpm(['install', '--ignore-scripts', '--include=dev', '--no-audit', '--no-fund', '--global=false', '--prefix', cwd]);
+  installedDependencies = true;
 }
 
 runNpm(['run', 'build']);
+
+if (installedDependencies && process.env.OMG_KEEP_PREPARE_NODE_MODULES !== '1') {
+  rmSync(join(cwd, 'node_modules'), { recursive: true, force: true });
+}
