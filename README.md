@@ -17,14 +17,16 @@ codex plugin add oh-my-goal@oh-my-goal-local
 In Codex, invoke the skill:
 
 ```text
-Use $oh-my-goal to interview me about what I want to build, create local harness files, and recommend the final Codex goal prompt.
+$oh-my-goal ralpli PRD 작성하고 싶어
 ```
 
-The skill asks for the objective, runs a deep interview, then writes:
+Text after `$oh-my-goal` is treated as the objective. The skill runs an OMX-style structured intake round, resolves ambiguity, then writes:
 
 ```text
 .omg/harness/<slug>/
   context-index.md
+  ambiguity-map.md
+  intake-questionnaire.md
   deep-interview.md
   goal-prompt.md
   harness.md
@@ -53,7 +55,8 @@ codex plugin add oh-my-goal@oh-my-goal-local
 ## What It Does
 
 - Refines a raw request into a single Codex goal prompt.
-- Runs deep-interview intake when scope or acceptance criteria are unclear.
+- Parses `$oh-my-goal <objective>` directly without re-asking for the objective.
+- Runs OMX-style structured deep-interview intake when scope or acceptance criteria are unclear.
 - Writes Markdown harness files under `.omg/harness/<slug>/`.
 - Sets up leader, architect, implementer, tester, critic, and replanner lane instructions.
 - Treats execution as trajectory search instead of premature convergence.
