@@ -100,7 +100,7 @@ Usage:
   node scripts/intake-question-runtime.mjs --ui --state-path <path>
 
 Modes:
-  auto      Open tmux arrow-key UI when attached; otherwise start sequential fallback.
+  auto      Open tmux arrow-key UI when attached; on macOS open Terminal UI; otherwise start sequential fallback.
   tmux      Require tmux pane arrow-key UI and block until answered.
   inline    Ask in the current terminal; uses arrow-key UI when TTY is available.
   markdown  Print the non-interactive fallback block.
@@ -151,6 +151,10 @@ function buildRecord(input, cwd) {
 
 function tmux(args) {
   return spawnSync('tmux', args, { encoding: 'utf-8' });
+}
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
 function isPaneId(value) {
@@ -246,6 +250,39 @@ function launchTmuxUi(statePath, record) {
     target: paneId,
     leader_pane: leaderPane,
     return_target: leaderPane,
+    return_transport: 'state',
+    launched_at: new Date().toISOString(),
+  };
+}
+
+function macosTerminalBridgeAvailable() {
+  if (process.platform !== 'darwin') return false;
+  if (safeString(process.env.OMG_DISABLE_TERMINAL_BRIDGE).trim() === '1') return false;
+  return true;
+}
+
+function launchMacosTerminalUi(statePath, record) {
+  const scriptPath = fileURLToPath(import.meta.url);
+  const cwd = record.cwd || process.cwd();
+  const command = [
+    `cd ${shellQuote(cwd)}`,
+    `printf '\\\\033]0;Oh My Goal Intake\\\\007'`,
+    `OMG_QUESTION_RETURN_TRANSPORT=state ${shellQuote(process.execPath)} ${shellQuote(scriptPath)} --ui --state-path ${shellQuote(statePath)}`,
+    'exit',
+  ].join('; ');
+  const appleScript = [
+    'tell application "Terminal"',
+    `  do script ${JSON.stringify(command)}`,
+    '  activate',
+    'end tell',
+  ].join('\n');
+  const result = spawnSync('osascript', ['-e', appleScript], { encoding: 'utf-8' });
+  if (result.status !== 0) {
+    throw new Error(safeString(result.stderr).trim() || 'failed to launch macOS Terminal question UI');
+  }
+  return {
+    renderer: 'macos-terminal',
+    target: 'Terminal.app',
     return_transport: 'state',
     launched_at: new Date().toISOString(),
   };
@@ -895,6 +932,19 @@ async function runTmux(cwd, input, timeoutMs) {
   return successPayload(await waitForAnswer(statePath, timeoutMs));
 }
 
+async function runMacosTerminal(cwd, input, timeoutMs) {
+  const { record, statePath } = await createRecord(cwd, input);
+  const renderer = launchMacosTerminalUi(statePath, record);
+  const current = await readJson(statePath);
+  await writeJsonAtomic(statePath, {
+    ...current,
+    status: current.status === 'answered' ? 'answered' : 'prompting',
+    updated_at: current.updated_at || new Date().toISOString(),
+    renderer: current.renderer || renderer,
+  });
+  return successPayload(await waitForAnswer(statePath, timeoutMs));
+}
+
 function printPayload(payload, json) {
   if (json) console.log(JSON.stringify(payload, null, 2));
   else if (payload.prompt) console.log(payload.prompt);
@@ -947,6 +997,17 @@ async function main() {
   if (args.mode === 'auto') {
     if (tmuxAvailable()) {
       printPayload(await runTmux(cwd, input, timeoutMs), args.json);
+      return;
+    }
+    if (macosTerminalBridgeAvailable()) {
+      try {
+        printPayload(await runMacosTerminal(cwd, input, timeoutMs), args.json);
+      } catch (error) {
+        printPayload({
+          ...await runSequentialStart(cwd, input),
+          fallback_reason: `macos-terminal-unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        }, args.json);
+      }
       return;
     }
     printPayload(await runSequentialStart(cwd, input), args.json);

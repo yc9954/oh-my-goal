@@ -160,6 +160,8 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(runtimeSource, /#\{pane_id\}/);
     assert.match(runtimeSource, /OMG_QUESTION_RETURN_PANE/);
     assert.match(runtimeSource, /isCurrentTmuxSessionAttached/);
+    assert.match(runtimeSource, /launchMacosTerminalUi/);
+    assert.match(runtimeSource, /osascript/);
     const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-runtime-'));
     try {
       const fakeBin = join(cwd, 'bin');
@@ -247,6 +249,80 @@ process.exit(0);
       assert.equal(bridgePayload.answers.length, 7);
       assert.equal(bridgePayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
 
+      if (process.platform === 'darwin') {
+        const fakeOsascript = join(fakeBin, 'osascript');
+        writeFileSync(
+          fakeOsascript,
+          `#!/usr/bin/env node
+const fs = require('node:fs');
+const script = process.argv.slice(2).join('\\n');
+const match = script.match(/--state-path '([^']+)'/);
+if (!match) {
+  console.error('missing state path');
+  process.exit(1);
+}
+const statePath = match[1];
+const record = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+const answers = record.questions.map((question, index) => {
+  const selected = question.options[0];
+  const multi = question.type === 'multi-answerable' || question.multi_select === true;
+  return {
+    question_id: question.id,
+    index,
+    answer: multi
+      ? { kind: 'multi', value: [selected.value], selected_labels: [selected.label], selected_values: [selected.value] }
+      : { kind: 'option', value: selected.value, selected_labels: [selected.label], selected_values: [selected.value] }
+  };
+});
+fs.writeFileSync(statePath, JSON.stringify({
+  ...record,
+  status: 'answered',
+  updated_at: new Date().toISOString(),
+  answers,
+  answer: answers[0].answer
+}, null, 2));
+process.exit(0);
+`,
+          'utf-8',
+        );
+        chmodSync(fakeOsascript, 0o755);
+
+        const terminalBridge = spawnSync(
+          process.execPath,
+          [
+            questionRuntimePath,
+            '--objective',
+            '계산기 앱을 웹사이트 형태로 만들어줘',
+            '--mode',
+            'auto',
+            '--cwd',
+            cwd,
+            '--json',
+          ],
+          {
+            cwd: root,
+            encoding: 'utf-8',
+            env: {
+              ...process.env,
+              PATH: `${fakeBin}:${process.env.PATH || ''}`,
+              TMUX: '',
+              TMUX_PANE: '',
+            },
+          },
+        );
+        assert.equal(terminalBridge.status, 0, terminalBridge.stderr || terminalBridge.stdout);
+        const terminalPayload = JSON.parse(terminalBridge.stdout) as {
+          ok: boolean;
+          renderer?: { renderer?: string; target?: string };
+          answers: Array<{ answer: { selected_values: string[] } }>;
+        };
+        assert.equal(terminalPayload.ok, true);
+        assert.equal(terminalPayload.renderer?.renderer, 'macos-terminal');
+        assert.equal(terminalPayload.renderer?.target, 'Terminal.app');
+        assert.equal(terminalPayload.answers.length, 7);
+        assert.equal(terminalPayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
+      }
+
       const fallback = spawnSync(
         process.execPath,
         [
@@ -262,7 +338,7 @@ process.exit(0);
         {
           cwd: root,
           encoding: 'utf-8',
-          env: { ...process.env, TMUX: '', TMUX_PANE: '' },
+          env: { ...process.env, TMUX: '', TMUX_PANE: '', OMG_DISABLE_TERMINAL_BRIDGE: '1' },
         },
       );
       assert.equal(fallback.status, 0, fallback.stderr || fallback.stdout);
@@ -290,7 +366,7 @@ process.exit(0);
           cwd,
           '--json',
         ],
-        { cwd: root, encoding: 'utf-8', env: { ...process.env, TMUX: '', TMUX_PANE: '' } },
+        { cwd: root, encoding: 'utf-8', env: { ...process.env, TMUX: '', TMUX_PANE: '', OMG_DISABLE_TERMINAL_BRIDGE: '1' } },
       );
       assert.equal(sequential.status, 0, sequential.stderr || sequential.stdout);
       const sequentialPayload = JSON.parse(sequential.stdout) as {

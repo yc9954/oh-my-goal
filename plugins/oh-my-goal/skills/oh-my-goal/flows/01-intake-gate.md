@@ -55,9 +55,9 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
   --json
 ```
 
-In attached tmux, `auto` opens a separate arrow-key question pane and blocks until structured `answers[]` are returned. The pane ports OMX `src/question/ui.ts` behavior: ↑↓ movement, Space toggles for `multi-answerable`, Enter/→ next, and ← back. Use those answers directly and continue to gap-fill.
+In attached tmux, `auto` opens a separate arrow-key question pane and blocks until structured `answers[]` are returned. On macOS outside tmux, it can open a Terminal question window with the same selector. The UI ports OMX `src/question/ui.ts` behavior: ↑↓ movement, Space toggles for `multi-answerable`, Enter/→ next, and ← back. Use those answers directly and continue to gap-fill.
 
-Outside attached tmux, `auto` returns the sequential fallback with the current ambiguity score. Ask only `prompt` from the JSON result, then stop. Keep `record_path` in context. When the user answers, continue with:
+When no interactive renderer can be opened, `auto` returns the sequential fallback with the current ambiguity score. Ask only `prompt` from the JSON result, then stop. Keep `record_path` in context. When the user answers, continue with:
 
 ```sh
 node <plugin-root>/scripts/intake-question-runtime.mjs \
