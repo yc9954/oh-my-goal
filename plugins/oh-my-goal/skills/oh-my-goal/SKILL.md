@@ -9,6 +9,12 @@ Use `$oh-my-goal <objective>` to turn a vague development idea into a Codex goal
 
 The product should still reuse the good OMX ideas: leader/worker separation, Team-style evidence lanes, worker packet templates, trajectory scoring, persistent state notes, critic pressure, and strict completion gates. The boundary is that those ideas are encoded as plugin guidance and repo-local Markdown artifacts, not as a required OMX runtime.
 
+## Mandatory Interview Gate
+
+The first `$oh-my-goal <objective>` response is an intake turn, not an execution turn. After repo/context preflight, ask the structured intake questions and then stop. Do not create harness files, run the artifact generator, write implementation files, call `create_goal`, or start coding until the user answers the intake questions.
+
+Only skip this gate when the user explicitly says to use defaults, skip questions, or proceed without interview. If the surface has no structured input tool, ask a numbered prose block with compact choices and wait for one user reply containing the answers.
+
 ## OMX-Derived Behavior
 
 Port the useful behavior from OMX `$deep-interview`, `$prometheus-strict`, and `$ralplan`:
@@ -26,8 +32,8 @@ Port the useful behavior from OMX `$deep-interview`, `$prometheus-strict`, and `
 1. If the invocation has trailing text, use it as the objective. If not, ask exactly one opening question:
    `What do you want to build or improve?`
 2. Inspect repo context first with focused reads; do not scan `node_modules`, generated caches, or vendor trees unless explicitly relevant.
-3. Present an OMX-style structured intake round for unresolved material ambiguity. Use choices where possible, and include an `Other` path only when a user-supplied answer is genuinely needed.
-4. Run gap-fill and critique after the answers. Ask another round only for surviving critical ambiguity.
+3. Present an OMX-style structured intake round for unresolved material ambiguity. Use choices where possible, and include an `Other` path only when a user-supplied answer is genuinely needed. End the turn immediately after the questions.
+4. After the user answers, run gap-fill and critique. Ask another round only for surviving critical ambiguity.
 5. Create repo-local harness artifacts under `.omg/harness/<slug>/`.
 6. Tell the user the recommended `create_goal` prompt from `goal-prompt.md`.
 7. If Codex goal tools are available, inspect `get_goal` first. Call `create_goal` only when there is no conflicting active goal and the user wants to start execution.
@@ -45,13 +51,28 @@ For common PRD/spec/planning requests, the first round should normally ask these
 
 If the request is not PRD/spec/planning, adapt the same slots to the task domain. Keep the first round short enough to answer in one turn.
 
+For implementation requests, still run the first intake round before writing code. Example compact fallback:
+
+```text
+Before I create files, answer these in one line:
+1. Scope: A minimal / B polished / C full-featured
+2. Stack: A static HTML/CSS/JS / B React/Vite / C match existing repo
+3. UX: A clean app / B platform-inspired / C domain-specific
+4. Functionality: A basic / B keyboard + edge cases / C history/settings
+5. Verification: A browser check / B tests / C both
+6. Output: A implement now / B harness only / C spec first
+
+Reply like: 1B 2A 3A 4B 5C 6A
+```
+
 ## Artifact Generator
 
-After the interview, prefer the bundled generator:
+After the interview, prefer the bundled generator. Do not pass synthetic default answers. Use `--interview-complete` only after the user has answered the intake or explicitly approved defaults:
 
 ```sh
 node <plugin-root>/scripts/create-harness.mjs \
   --objective "<objective>" \
+  --interview-complete \
   --answers-json '<json object with interview answers>'
 ```
 

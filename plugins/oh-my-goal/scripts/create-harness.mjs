@@ -19,6 +19,14 @@ function parseArgs(argv) {
       parsed.json = true;
       continue;
     }
+    if (arg === '--interview-complete') {
+      parsed.interviewComplete = true;
+      continue;
+    }
+    if (arg === '--print-interview') {
+      parsed.printInterview = true;
+      continue;
+    }
     if (VALUE_FLAGS.has(arg)) {
       const value = argv[index + 1];
       if (!value || value.startsWith('--')) throw new Error(`Missing value for ${arg}.`);
@@ -62,6 +70,19 @@ function formatQuestion({ question, options }) {
     question,
     ...options.map((option, index) => `  ${index + 1}) ${option}`),
     'Choose a number or answer in your own words: ',
+  ]);
+}
+
+function renderInterviewBlock(objective) {
+  return lines([
+    'Before I create harness files or implementation files, answer these in one reply.',
+    '',
+    ...interviewQuestions(objective).flatMap((entry, index) => [
+      `${index + 1}. ${entry.question}`,
+      ...(entry.options || []).map((option, optionIndex) => `   ${String.fromCharCode(65 + optionIndex)}) ${option}`),
+    ]),
+    '',
+    'Reply with choices or short answers, for example: 1A 2A 3B 4A.',
   ]);
 }
 
@@ -521,6 +542,15 @@ function artifactMap({ objective, slug, route, answers }) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   let objective = normalizeObjective(args.objective);
+  if (args.printInterview) {
+    if (!objective.trim()) throw new Error('Missing objective for --print-interview.');
+    console.log(renderInterviewBlock(objective));
+    return;
+  }
+  const providedAnswers = Boolean(args.answersJson || args.answersFile);
+  if (providedAnswers && !args.interviewComplete) {
+    throw new Error('Refusing --answers-json/--answers-file without --interview-complete. Ask the user first, or pass --interview-complete only after the user approves answers/defaults.');
+  }
   let answers = await readAnswers(args);
   if (!objective || Object.keys(answers).length === 0) {
     const result = await askMissing(objective, answers);

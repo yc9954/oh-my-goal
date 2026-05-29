@@ -20,9 +20,56 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(skill, /structured form|structured input/i);
     assert.match(skill, /numbered prose block/i);
     assert.match(skill, /gap-fill passes/i);
+    assert.match(skill, /Mandatory Interview Gate/i);
+    assert.match(skill, /stop/i);
+    assert.match(skill, /Do not create harness files/i);
+    assert.match(skill, /--interview-complete/i);
     assert.match(skill, /Metis-style clarification/i);
     assert.match(skill, /Momus-style critique/i);
     assert.match(skill, /Oracle-style synthesis/i);
+  });
+
+  it('requires an explicit completed interview before accepting supplied answers', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-plugin-'));
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [
+          generatorPath,
+          '--objective',
+          'calculator website',
+          '--cwd',
+          cwd,
+          '--answers-json',
+          JSON.stringify({ acceptance: 'implemented calculator' }),
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /without --interview-complete/i);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('prints a one-turn structured interview block without creating files', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-plugin-'));
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [generatorPath, '--objective', 'calculator website', '--cwd', cwd, '--print-interview'],
+        { cwd: root, encoding: 'utf-8' },
+      );
+
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      assert.match(result.stdout, /Before I create harness files/i);
+      assert.match(result.stdout, /Reply with choices/i);
+      assert.doesNotMatch(result.stdout, /oh-my-goal harness:/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   it('generates OMX-style ambiguity and questionnaire artifacts from trailing objective text', () => {
@@ -35,6 +82,7 @@ describe('oh-my-goal plugin contract', () => {
           '$oh-my-goal ralpli PRD draft',
           '--cwd',
           cwd,
+          '--interview-complete',
           '--answers-json',
           JSON.stringify({
             deliverableScope: 'next-version PRD',

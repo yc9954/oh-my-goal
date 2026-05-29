@@ -22,6 +22,8 @@ $oh-my-goal ralpli PRD 작성하고 싶어
 
 Text after `$oh-my-goal` is treated as the objective. The skill runs an OMX-style structured intake round, resolves ambiguity, then writes:
 
+The first response is intentionally a questionnaire. The plugin should not create harness files, write implementation files, or start coding until you answer the intake questions or explicitly say to use defaults.
+
 ```text
 .omg/harness/<slug>/
   context-index.md
@@ -47,7 +49,11 @@ Use `goal-prompt.md` as the recommended `create_goal` payload after checking the
 ```bash
 npm install
 npm run build
-node plugins/oh-my-goal/scripts/create-harness.mjs --objective "Ship this safely"
+node plugins/oh-my-goal/scripts/create-harness.mjs --objective "Ship this safely" --print-interview
+node plugins/oh-my-goal/scripts/create-harness.mjs \
+  --objective "Ship this safely" \
+  --interview-complete \
+  --answers-json '{"acceptance":"goal-ready harness","nonGoals":"no implementation yet","verification":"inspect Markdown"}'
 codex plugin marketplace add "$PWD"
 codex plugin add oh-my-goal@oh-my-goal-local
 ```
