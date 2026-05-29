@@ -4,6 +4,8 @@ Generate harness artifacts only after the user answers intake or explicitly appr
 
 ## Preferred Generator
 
+Path rule: `<plugin-root>` is two directories above this skill directory. Use `<plugin-root>/scripts/create-harness.mjs`, not `skills/oh-my-goal/scripts/create-harness.mjs`.
+
 Use the bundled script from the plugin root:
 
 ```sh

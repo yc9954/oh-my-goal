@@ -28,6 +28,8 @@ Do not show a long analysis dump. Ask only the independent high-leverage questio
 
 ## Structured Intake
 
+Path rule: `<plugin-root>` is two directories above this skill directory. Use `<plugin-root>/scripts/intake-question-engine.mjs`, not `skills/oh-my-goal/scripts/intake-question-engine.mjs`.
+
 Build the question round with the bundled OMX-derived question engine:
 
 ```sh

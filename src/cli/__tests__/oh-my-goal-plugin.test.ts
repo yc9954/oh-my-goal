@@ -30,6 +30,8 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(skill, /intake-question-runtime\.mjs/);
     assert.match(skill, /team-runtime\.mjs/);
     assert.match(skill, /runtime-commands\.md/);
+    assert.match(skill, /two levels above this skill directory/i);
+    assert.match(skill, /Do not look for scripts under `skills\/oh-my-goal\/scripts\/`/);
     assert.match(skill, /questions\[\]/);
     assert.match(skill, /selected_values/);
     assert.match(skill, /--interview-complete/i);
@@ -69,6 +71,7 @@ describe('oh-my-goal plugin contract', () => {
     const intake = readSkillRelative('flows/01-intake-gate.md');
     assert.match(intake, /ambiguity map/i);
     assert.match(intake, /intake-question-engine\.mjs/i);
+    assert.match(intake, /not `skills\/oh-my-goal\/scripts\/intake-question-engine\.mjs`/);
     assert.match(intake, /questions\[\]/i);
     assert.match(intake, /multi-answerable/i);
     assert.match(intake, /selected_values/i);
@@ -79,6 +82,7 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(orchestration, /Momus/i);
     assert.match(orchestration, /Oracle/i);
     assert.match(orchestration, /team-runtime\.mjs/i);
+    assert.match(orchestration, /not `skills\/oh-my-goal\/scripts\/team-runtime\.mjs`/);
     assert.match(orchestration, /tmux panes/i);
     assert.match(orchestration, /collect/i);
     assert.match(orchestration, /Local-Optimum Pressure/i);

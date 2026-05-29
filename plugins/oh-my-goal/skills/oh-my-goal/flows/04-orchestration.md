@@ -1,6 +1,6 @@
 # Orchestration
 
-Use available Codex subagent, agent, or task tools only as evidence lanes. If visible worker lanes are useful, prefer the plugin Team bridge:
+Use available Codex subagent, agent, or task tools only as evidence lanes. If visible worker lanes are useful, prefer the plugin Team bridge. Path rule: `<plugin-root>` is two directories above this skill directory, so the runtime is `<plugin-root>/scripts/team-runtime.mjs`, not `skills/oh-my-goal/scripts/team-runtime.mjs`.
 
 ```sh
 node <plugin-root>/scripts/team-runtime.mjs launch \
