@@ -48,6 +48,7 @@ describe('package bin contract', () => {
     assert.equal(pkg.scripts?.['verify:plugin-bundle'], 'node dist/scripts/sync-plugin-mirror.js --check');
     assert.equal(pkg.scripts?.['verify:native-agents'], 'node dist/scripts/verify-native-agents.js');
     assert.equal(pkg.scripts?.build, 'node -e "const fs=require(\'fs\'); fs.rmSync(\'dist\',{recursive:true,force:true});" && tsc && node -e "const fs=require(\'fs\'); for (const bin of [\'dist/cli/omx.js\',\'dist/cli/omg.js\']) fs.chmodSync(bin, 0o755);"');
+    assert.equal(pkg.scripts?.prepare, 'npm run build');
     assert.equal(pkg.scripts?.prepack, 'npm run build && npm run verify:native-agents && npm run sync:plugin && npm run verify:plugin-bundle && npm run clean:native-package-assets');
     assert.equal(pkg.scripts?.postinstall, 'node src/scripts/postinstall-bootstrap.js');
     assert.equal(pkg.scripts?.postpack, 'npm run clean:native-package-assets');

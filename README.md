@@ -6,6 +6,13 @@ This repository is a standalone productized fork of the goal-harness work. It in
 
 ## Install & Run
 
+From GitHub now:
+
+```bash
+npx github:yc9954/oh-my-goal --help
+npx --package github:yc9954/oh-my-goal omg refine --objective "Ship this safely"
+```
+
 From npm after publishing:
 
 ```bash
