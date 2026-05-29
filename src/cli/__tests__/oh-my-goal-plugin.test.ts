@@ -16,6 +16,7 @@ const questionRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'inta
 const teamCorePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'omx-team-core.mjs');
 const teamRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'team-runtime.mjs');
 const pressureRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'pressure-runtime.mjs');
+const qualityMigrationPath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'migrate-quality-pruning.mjs');
 
 function readSkillRelative(path: string): string {
   return readFileSync(join(skillRoot, path), 'utf-8');
@@ -139,18 +140,26 @@ describe('oh-my-goal plugin contract', () => {
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const payload = JSON.parse(result.stdout) as {
       source: string;
+      locale: string;
       questions: Array<{
         id: string;
+        question: string;
+        other_label: string;
         type: string;
         multi_select: boolean;
         options: Array<{ label: string; value: string; description?: string }>;
       }>;
     };
     assert.equal(payload.source, 'oh-my-goal');
+    assert.equal(payload.locale, 'ko');
     assert.equal(payload.questions.length, 10);
     assert.equal(payload.questions[0]?.id, 'deliverableScope');
+    assert.match(payload.questions[0]?.question || '', /구현 범위|산출물/);
     assert.equal(payload.questions[0]?.type, 'single-answerable');
     assert.equal(payload.questions[0]?.multi_select, false);
+    assert.equal(payload.questions[0]?.other_label, '직접 입력');
+    assert.equal(payload.questions[0]?.options[0]?.label, '완성도 있는 단일 화면 구현');
+    assert.equal(payload.questions[0]?.options[0]?.value, 'polished-single-screen');
     assert.equal(payload.questions[6]?.id, 'nonGoals');
     assert.equal(payload.questions[6]?.type, 'multi-answerable');
     assert.equal(payload.questions[6]?.multi_select, true);
@@ -169,12 +178,29 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(markdownResult.stdout, /OMX question schema fallback/);
     assert.match(markdownResult.stdout, /questions\[\]/);
     assert.match(markdownResult.stdout, /\[single-answerable\] id=deliverableScope multi_select=false/);
-    assert.match(markdownResult.stdout, /label="Polished single-screen implementation" value="polished-single-screen"/);
+    assert.match(markdownResult.stdout, /질문: 이번 목표의 산출물 또는 구현 범위/);
+    assert.match(markdownResult.stdout, /label="완성도 있는 단일 화면 구현" value="polished-single-screen"/);
+    assert.match(markdownResult.stdout, /other_label="직접 입력"/);
     assert.match(markdownResult.stdout, /\[multi-answerable\] id=nonGoals multi_select=true/);
     assert.match(markdownResult.stdout, /\[multi-answerable\] id=qualityFrontier multi_select=true/);
     assert.match(markdownResult.stdout, /\[multi-answerable\] id=qualityPruning multi_select=true/);
     assert.match(markdownResult.stdout, /\[single-answerable\] id=pruningRule multi_select=false/);
     assert.match(markdownResult.stdout, /answers\[\] -> \{ question_id, answer: \{ selected_values: \[\.\.\.\] \} \}/);
+
+    const englishResult = spawnSync(
+      process.execPath,
+      [questionEnginePath, '--objective', 'calculator website', '--format', 'payload'],
+      { cwd: root, encoding: 'utf-8' },
+    );
+    assert.equal(englishResult.status, 0, englishResult.stderr || englishResult.stdout);
+    const englishPayload = JSON.parse(englishResult.stdout) as {
+      locale: string;
+      questions: Array<{ question: string; options: Array<{ label: string; value: string }> }>;
+    };
+    assert.equal(englishPayload.locale, 'en');
+    assert.equal(englishPayload.questions[0]?.question, 'Which implementation scope should this target?');
+    assert.equal(englishPayload.questions[0]?.options[0]?.label, 'Polished single-screen implementation');
+    assert.equal(englishPayload.questions[0]?.options[0]?.value, 'polished-single-screen');
 
     const commandResult = spawnSync(
       process.execPath,
@@ -635,8 +661,8 @@ process.exit(0);
       assert.equal(fallbackPayload.ok, false);
       assert.equal(fallbackPayload.renderer, 'sequential');
       assert.equal(fallbackPayload.status, 'prompting');
-      assert.match(fallbackPayload.prompt, /Question 1 of 10/);
-      assert.match(fallbackPayload.prompt, /Ambiguity: 0\.86 \(high\)/);
+      assert.match(fallbackPayload.prompt, /질문 1\/10/);
+      assert.match(fallbackPayload.prompt, /모호도: 0\.86 \(high\)/);
 
       const sequential = spawnSync(
         process.execPath,
@@ -665,9 +691,10 @@ process.exit(0);
       assert.equal(sequentialPayload.status, 'prompting');
       assert.equal(sequentialPayload.current_index, 0);
       assert.equal(sequentialPayload.ambiguity.score, 0.86);
-      assert.match(sequentialPayload.prompt, /Question 1 of 10/);
-      assert.match(sequentialPayload.prompt, /Ambiguity: 0\.86 \(high\)/);
+      assert.match(sequentialPayload.prompt, /질문 1\/10/);
+      assert.match(sequentialPayload.prompt, /모호도: 0\.86 \(high\)/);
       assert.match(sequentialPayload.prompt, /\[single-answerable\] id=deliverableScope multi_select=false/);
+      assert.match(sequentialPayload.prompt, /완성도 있는 단일 화면 구현/);
 
       const nextSequential = spawnSync(
         process.execPath,
@@ -693,7 +720,7 @@ process.exit(0);
       assert.equal(nextPayload.ok, false);
       assert.equal(nextPayload.current_index, 1);
       assert.equal(nextPayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
-      assert.match(nextPayload.prompt, /Question 2 of 10/);
+      assert.match(nextPayload.prompt, /질문 2\/10/);
 
       const complexStart = spawnSync(
         process.execPath,
@@ -734,14 +761,21 @@ process.exit(0);
         ok: boolean;
         current_index: number;
         progress: string;
-        question: { id: string };
+        question: { id: string; question: string; options: Array<{ label: string; value: string }>; other_label: string };
         ambiguity: { score: number; level: string };
         answers: unknown[];
+        prompt: string;
       };
       assert.equal(complexFollowup.ok, false);
       assert.equal(complexFollowup.current_index, 10);
       assert.equal(complexFollowup.progress, '11/11');
       assert.equal(complexFollowup.question.id, 'edgeCases');
+      assert.match(complexFollowup.question.question, /edge case|보조 동작/);
+      assert.equal(complexFollowup.question.options[0]?.label, '소수, 음수, 연속 연산');
+      assert.equal(complexFollowup.question.options[0]?.value, 'numeric-edge-cases');
+      assert.equal(complexFollowup.question.other_label, '직접 입력');
+      assert.match(complexFollowup.prompt, /질문 11\/11/);
+      assert.match(complexFollowup.prompt, /소수, 음수, 연속 연산/);
       assert.ok(complexFollowup.ambiguity.score > 0.35);
       assert.equal(complexFollowup.answers.length, 10);
 
@@ -1644,6 +1678,64 @@ process.exit(0);
       assert.match(readFileSync(join(harnessRoot, 'execution-spec.md'), 'utf-8'), /user-workflow-polish; verification-depth/);
       assert.match(readFileSync(join(harnessRoot, 'pruning-matrix.md'), 'utf-8'), /user-visible-value-first/);
       assert.match(readFileSync(join(harnessRoot, 'deep-interview.md'), 'utf-8'), /maximize-quality-within-scope/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('provides migration guidance for old harnesses missing quality pruning evidence', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-migration-'));
+    try {
+      const harnessRoot = join(cwd, '.omg', 'harness', 'old-harness');
+      mkdirSync(harnessRoot, { recursive: true });
+      writeFileSync(join(harnessRoot, 'completion-gate.md'), '# Completion Gate\n\n- External verification passed.\n', 'utf-8');
+
+      const dryRun = spawnSync(
+        process.execPath,
+        [
+          qualityMigrationPath,
+          '--slug',
+          'old-harness',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(dryRun.status, 0, dryRun.stderr || dryRun.stdout);
+      const dryPayload = JSON.parse(dryRun.stdout) as {
+        missing_files: string[];
+        completion_needs_quality_pruning: boolean;
+        written: string[];
+        guide: string;
+      };
+      assert.equal(dryPayload.completion_needs_quality_pruning, true);
+      assert.deepEqual(dryPayload.missing_files, ['quality-frontier.md', 'pruning-matrix.md', 'selected-strategy.md']);
+      assert.deepEqual(dryPayload.written, []);
+      assert.match(dryPayload.guide, /qualityPruning/);
+      assert.match(dryPayload.guide, /frontierConsidered/);
+
+      const applied = spawnSync(
+        process.execPath,
+        [
+          qualityMigrationPath,
+          '--slug',
+          'old-harness',
+          '--cwd',
+          cwd,
+          '--apply',
+          '--json',
+        ],
+        { cwd: root, encoding: 'utf-8' },
+      );
+      assert.equal(applied.status, 0, applied.stderr || applied.stdout);
+      const appliedPayload = JSON.parse(applied.stdout) as { written: string[]; guide_path: string };
+      assert.ok(appliedPayload.written.includes('.omg/harness/old-harness/quality-pruning-migration.md'));
+      assert.ok(existsSync(join(harnessRoot, 'quality-frontier.md')));
+      assert.ok(existsSync(join(harnessRoot, 'pruning-matrix.md')));
+      assert.ok(existsSync(join(harnessRoot, 'selected-strategy.md')));
+      assert.match(readFileSync(join(cwd, appliedPayload.guide_path), 'utf-8'), /Completion Evidence Patch/);
+      assert.match(readFileSync(join(harnessRoot, 'pruning-matrix.md'), 'utf-8'), /speculative polish/);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

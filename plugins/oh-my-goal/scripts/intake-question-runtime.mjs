@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   buildIntakeQuestionInput,
+  localizeQuestionForLocale,
   renderQuestionInputMarkdown,
 } from './intake-question-engine.mjs';
 import {
@@ -81,6 +82,10 @@ function parseArgs(argv) {
       parsed.mode = argv[++index];
       continue;
     }
+    if (arg === '--locale') {
+      parsed.locale = argv[++index];
+      continue;
+    }
     if (arg === '--state-path') {
       parsed.statePath = argv[++index];
       continue;
@@ -115,7 +120,7 @@ function printHelp() {
   console.log(`oh-my-goal intake-question-runtime
 
 Usage:
-  node scripts/intake-question-runtime.mjs --objective "<objective>" [--mode auto|cmux|tmux|inline|markdown|sequential] [--json]
+  node scripts/intake-question-runtime.mjs --objective "<objective>" [--mode auto|cmux|tmux|inline|markdown|sequential] [--locale ko|en] [--json]
   node scripts/intake-question-runtime.mjs --mode status --state-path <path> [--json]
   node scripts/intake-question-runtime.mjs --mode sequential-answer --state-path <path> --answer <selection> [--json]
   node scripts/intake-question-runtime.mjs --ui --state-path <path>
@@ -169,6 +174,7 @@ function buildRecord(input, cwd) {
     type: input.type,
     source: input.source,
     objective: input.objective,
+    locale: input.locale,
     questions: input.questions,
   };
 }
@@ -858,8 +864,9 @@ async function promptForPendingAnswersWithArrows(record, existingAnswers) {
     renderQuestionMeta: (question, relativeIndex) => {
       const sourceIndex = pending[relativeIndex]?.index ?? relativeIndex;
       const ambiguity = ambiguityForQuestion(question, sourceIndex);
+      const ambiguityLabel = record.locale === 'ko' ? '모호도' : 'Ambiguity';
       return [
-        `Ambiguity: ${ambiguity.score.toFixed(2)} (${ambiguity.level}) - ${ambiguity.reason}`,
+        `${ambiguityLabel}: ${ambiguity.score.toFixed(2)} (${ambiguity.level}) - ${ambiguity.reason}`,
         `[${question.type}] id=${question.id} multi_select=${isMultiAnswerableQuestion(question) ? 'true' : 'false'}`,
       ].join('\n');
     },
@@ -875,7 +882,8 @@ async function finalizeOrExtendRecord(statePath, record, answers) {
   const { residual, question, quality, phase } = nextFollowupQuestion(record, answers);
   const now = new Date().toISOString();
   if (question) {
-    const questions = [...recordQuestions(record), question];
+    const localizedQuestion = localizeQuestionForLocale(question, record.locale);
+    const questions = [...recordQuestions(record), localizedQuestion];
     const extended = {
       ...record,
       status: 'prompting',
@@ -948,12 +956,13 @@ function renderSequentialPrompt(record) {
   if (!question) return '';
   const ambiguity = ambiguityForQuestion(question, index);
   const multi = question.type === 'multi-answerable' || question.multi_select;
+  const ko = record.locale === 'ko';
   const lines = [
     record.header || 'Oh My Goal Intake',
-    `Question ${index + 1} of ${questions.length}`,
-    `Ambiguity: ${ambiguity.score.toFixed(2)} (${ambiguity.level}) - ${ambiguity.reason}`,
+    ko ? `질문 ${index + 1}/${questions.length}` : `Question ${index + 1} of ${questions.length}`,
+    ko ? `모호도: ${ambiguity.score.toFixed(2)} (${ambiguity.level}) - ${ambiguity.reason}` : `Ambiguity: ${ambiguity.score.toFixed(2)} (${ambiguity.level}) - ${ambiguity.reason}`,
     `[${question.type}] id=${question.id} multi_select=${multi ? 'true' : 'false'}`,
-    `question: ${question.question}`,
+    `${ko ? '질문' : 'question'}: ${question.question}`,
     '',
   ];
   question.options.forEach((option, optionIndex) => {
@@ -962,7 +971,11 @@ function renderSequentialPrompt(record) {
   });
   if (question.allow_other) lines.push(`${String.fromCharCode(65 + question.options.length)}) ${question.other_label}`);
   lines.push('');
-  lines.push(multi ? `Reply with one or more selections, e.g. ${index + 1}A,B. For Other: ${index + 1}${String.fromCharCode(65 + question.options.length)}: <text>` : `Reply with one selection, e.g. ${index + 1}A. For Other: ${index + 1}${String.fromCharCode(65 + question.options.length)}: <text>`);
+  if (ko) {
+    lines.push(multi ? `하나 이상 선택해서 답해주세요. 예: ${index + 1}A,B. 직접 입력: ${index + 1}${String.fromCharCode(65 + question.options.length)}: <text>` : `하나를 선택해서 답해주세요. 예: ${index + 1}A. 직접 입력: ${index + 1}${String.fromCharCode(65 + question.options.length)}: <text>`);
+  } else {
+    lines.push(multi ? `Reply with one or more selections, e.g. ${index + 1}A,B. For Other: ${index + 1}${String.fromCharCode(65 + question.options.length)}: <text>` : `Reply with one selection, e.g. ${index + 1}A. For Other: ${index + 1}${String.fromCharCode(65 + question.options.length)}: <text>`);
+  }
   return lines.join('\n');
 }
 
@@ -1242,7 +1255,7 @@ async function main() {
   const objective = safeString(args.objective).trim();
   if (!objective) throw new Error('Missing objective.');
   const cwd = resolve(args.cwd || process.cwd());
-  const input = buildIntakeQuestionInput(objective);
+  const input = buildIntakeQuestionInput(objective, { locale: args.locale });
   const markdown = renderQuestionInputMarkdown(input);
   const timeoutMs = Number.isFinite(args.timeoutMs) && args.timeoutMs > 0 ? args.timeoutMs : DEFAULT_WAIT_TIMEOUT_MS;
 

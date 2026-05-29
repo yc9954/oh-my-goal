@@ -58,6 +58,8 @@ The payload must use canonical OMX question fields:
 - `allow_other` only when one user-supplied option is genuinely useful,
 - `answers[]` and `answers[i].answer.selected_values` as the source of truth after the answer.
 
+Locale rule: when the objective contains Korean text, the engine renders user-visible `question`, option `label`, option `description`, and `other_label` in Korean. Keep `id`, `value`, `selected_values`, `type`, and `multi_select` canonical and English-compatible.
+
 For the user-facing intake, run the bundled runtime in `auto` mode first:
 
 ```sh

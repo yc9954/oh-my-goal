@@ -52,6 +52,7 @@ node plugins/oh-my-goal/scripts/intake-question-engine.mjs \
 ```
 
 That payload uses the canonical `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values` schema from `omx question`. It has two stages: reduce ambiguity first, then expand and prune quality-improvement candidates so the goal does not converge on the first plausible path.
+If the objective contains Korean text, the question and option display text is rendered in Korean while canonical IDs and `selected_values` stay in English for automation. Use `--locale ko|en` to override auto-detection.
 
 For an interactive intake UI, use the optional runtime:
 
@@ -86,6 +87,17 @@ node plugins/oh-my-goal/scripts/pressure-runtime.mjs init \
 ```
 
 It writes `.omg/runtime/pressure/<slug>/` state, forces evidence-backed baseline/novelty/critic trajectories, imports Team worker `result.md` files with `pressure-runtime.mjs import-team`, creates perturbations for repeated blockers, and blocks completion until `pressure-runtime.mjs gate` passes.
+
+For older harnesses created before quality pruning existed, generate a migration guide:
+
+```bash
+node plugins/oh-my-goal/scripts/migrate-quality-pruning.mjs \
+  --slug old-harness \
+  --apply \
+  --json
+```
+
+This writes `quality-pruning-migration.md` plus any missing `quality-frontier.md`, `pruning-matrix.md`, and `selected-strategy.md` scaffolds. It does not overwrite existing harness files.
 
 ```text
 .omg/harness/<slug>/
@@ -132,6 +144,7 @@ codex plugin add oh-my-goal@oh-my-goal-local
 - Refines a raw request into a single Codex goal prompt.
 - Parses `$oh-my-goal <objective>` directly without re-asking for the objective.
 - Runs OMX-style structured deep-interview intake when scope or acceptance criteria are unclear.
+- Renders Korean intake questions/options for Korean objectives while preserving English internal values.
 - Runs quality frontier expansion and pruning before path selection.
 - Writes Markdown harness files under `.omg/harness/<slug>/`.
 - Sets up leader, architect, implementer, tester, critic, and replanner lane instructions.
