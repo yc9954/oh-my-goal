@@ -45,6 +45,10 @@ function parseArgs(argv) {
       parsed.force = true;
       continue;
     }
+    if (arg === '--help' || arg === '-h') {
+      parsed.help = true;
+      continue;
+    }
     const valueFlags = new Set([
       '--objective',
       '--slug',
