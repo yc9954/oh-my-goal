@@ -6,12 +6,12 @@ The primary surface is the `oh-my-goal` Codex plugin skill. The `omg` CLI remain
 
 ## Plugin-First Flow
 
-Install from GitHub, then register the local plugin marketplace:
+Install the Codex plugin directly from the GitHub marketplace source:
 
 ```bash
 codex --version
-npm install -g --install-links=true github:yc9954/oh-my-goal
-omg setup
+codex plugin marketplace add yc9954/oh-my-goal --ref main
+codex plugin add oh-my-goal@oh-my-goal-local
 ```
 
 In Codex, invoke the skill:
@@ -30,6 +30,10 @@ The skill asks for the objective, runs a deep interview, then writes:
   harness.md
   agents.md
   orchestration.md
+  team-system.md
+  worker-packet-template.md
+  trajectory-ledger.md
+  state-ledger.md
   local-optimum-pressure.md
   completion-gate.md
 ```
@@ -42,6 +46,8 @@ Use `goal-prompt.md` as the recommended `create_goal` payload after checking the
 npm install
 npm run build
 node plugins/oh-my-goal/scripts/create-harness.mjs --objective "Ship this safely"
+codex plugin marketplace add "$PWD"
+codex plugin add oh-my-goal@oh-my-goal-local
 ```
 
 ## What It Does

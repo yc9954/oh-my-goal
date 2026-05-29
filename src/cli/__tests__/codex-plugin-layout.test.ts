@@ -52,6 +52,7 @@ type Marketplace = {
 
 const root = process.cwd();
 const pluginName = 'oh-my-codex';
+const goalPluginName = 'oh-my-goal';
 const pluginRoot = join(root, 'plugins', pluginName);
 const pluginManifestPath = join(pluginRoot, '.codex-plugin', 'plugin.json');
 const pluginMcpPath = join(pluginRoot, '.mcp.json');
@@ -248,15 +249,15 @@ describe('official Codex plugin layout', () => {
     assert.equal(pluginEntries.includes('hooks'), true, 'official plugin should ship plugin-scoped lifecycle hooks');
   });
 
-  it('registers the plugin in the repo marketplace with explicit source, policy, and category', async () => {
+  it('registers the goal plugin in the repo marketplace with explicit source, policy, and category', async () => {
     const marketplace = await readJson<Marketplace>(marketplacePath);
-    const entry = marketplace.plugins?.find((candidate) => candidate.name === pluginName);
+    const entry = marketplace.plugins?.find((candidate) => candidate.name === goalPluginName);
 
-    assert.equal(marketplace.name, 'oh-my-codex-local');
-    assert.equal(marketplace.interface?.displayName, 'oh-my-codex Local Plugins');
-    assert.ok(entry, 'expected marketplace entry for oh-my-codex');
+    assert.equal(marketplace.name, 'oh-my-goal-local');
+    assert.equal(marketplace.interface?.displayName, 'Oh My Goal Local Plugins');
+    assert.ok(entry, 'expected marketplace entry for oh-my-goal');
     assert.equal(entry.source?.source, 'local');
-    assert.equal(entry.source?.path, './plugins/oh-my-codex');
+    assert.equal(entry.source?.path, './plugins/oh-my-goal');
     assert.equal(entry.policy?.installation, 'AVAILABLE');
     assert.equal(entry.policy?.authentication, 'ON_INSTALL');
     assert.equal(entry.category, 'Developer Tools');
@@ -307,7 +308,6 @@ describe('official Codex plugin layout', () => {
   it('documents marketplace-aware cache semantics without replacing full setup', async () => {
     const staleCachePath = '~/.codex/plugins/cache/omc/oh-my-codex';
     const docsToCheck = [
-      'README.md',
       'docs/troubleshooting.md',
       'docs/hooks-extension.md',
       'skills/doctor/SKILL.md',
@@ -326,7 +326,7 @@ describe('official Codex plugin layout', () => {
     assert.match(combined, /plugins\/cache\/\$MARKETPLACE_NAME\/oh-my-codex\/\$VERSION\//);
     assert.match(combined, /not a replacement for `npm install -g oh-my-codex` plus `omx setup`/);
     assert.match(combined, /legacy setup mode installs native agents(?:\/| and )prompts|plugin setup mode archives stale legacy prompt\/native-agent files/);
-    assert.match(combined, /plugin-scoped companion metadata for official Codex lifecycle hooks/i);
-    assert.match(combined, /legacy\/fallback native Codex hook registrations|legacy setup mode installs prompts\/native agents and \.codex\/hooks\.json/i);
+    assert.match(combined, /plugin-scoped\s+companion metadata files/i);
+    assert.match(combined, /legacy setup mode installs native agents and prompts|native Codex hook registrations installed by `omx setup`/i);
   });
 });
