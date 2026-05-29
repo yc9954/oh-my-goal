@@ -5,8 +5,8 @@
 The same workflow is also exposed as the sibling product CLI **OMG / Oh My Goal**:
 
 ```sh
-npx -p oh-my-codex omg --help
-npx -p oh-my-codex omg refine --objective "Ship this safely"
+npx oh-my-goal --help
+npx -p oh-my-goal omg refine --objective "Ship this safely"
 ```
 
 Use `omg <command>` when you want the goal harness as the primary product surface. Use `omx goal-harness <command>` when you are already inside the broader OMX CLI.

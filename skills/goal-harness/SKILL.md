@@ -10,8 +10,8 @@ Use `$goal-harness` when the user wants one Codex goal to drive a long-running O
 The same harness ships as the sibling product CLI `omg`:
 
 ```sh
-npx -p oh-my-codex omg --help
-npx -p oh-my-codex omg refine --objective "<user request>"
+npx oh-my-goal --help
+npx -p oh-my-goal omg refine --objective "<user request>"
 ```
 
 `omg <command>` is equivalent to `omx goal-harness <command>` and is the preferred product-level surface when the user asks for an npx-installable goal harness.

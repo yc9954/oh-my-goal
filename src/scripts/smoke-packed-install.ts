@@ -196,7 +196,7 @@ export function buildNativeHookSmokePayload(
 
 function smokeInstalledNativeHookDist(prefixDir: string): void {
   const globalNodeModules = resolveGlobalNodeModules(prefixDir);
-  const packageRoot = join(globalNodeModules, 'oh-my-codex');
+  const packageRoot = join(globalNodeModules, 'oh-my-goal');
   const hookScript = join(packageRoot, 'dist', 'scripts', 'codex-native-hook.js');
   const smokeCwd = mkdtempSync(join(tmpdir(), 'omx-packed-hook-smoke-'));
   try {
@@ -260,6 +260,8 @@ async function main(): Promise<void> {
     for (const argv of PACKED_INSTALL_SMOKE_GOAL_COMMANDS) {
       run(omgPath, argv, { cwd: repoRoot });
     }
+    const ohMyGoalPath = join(prefixDir, process.platform === 'win32' ? '' : 'bin', npmBinName('oh-my-goal'));
+    run(ohMyGoalPath, ['--help'], { cwd: repoRoot });
     smokeInstalledNativeHookDist(prefixDir);
 
     console.log('packed install smoke: PASS');

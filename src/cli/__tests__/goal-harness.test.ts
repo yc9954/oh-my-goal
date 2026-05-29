@@ -53,7 +53,7 @@ describe('cli/goal-harness', () => {
     assert.match(GOAL_HARNESS_HELP, /Workers never call create_goal or update_goal/);
     assert.match(HELP, /omx goal-harness[\s\S]*single-goal OMX-derived autonomy harness/i);
     assert.match(OMG_HELP, /Oh My Goal/);
-    assert.match(OMG_HELP, /npx -p oh-my-codex omg/);
+    assert.match(OMG_HELP, /npx oh-my-goal/);
   });
 
   it('exposes the goal harness as the sibling omg product CLI', async () => {

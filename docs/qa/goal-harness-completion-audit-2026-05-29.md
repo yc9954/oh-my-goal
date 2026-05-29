@@ -13,7 +13,7 @@ This audit maps the active Codex goal-native OMX harness objective to current re
 - Hooks/status/HUD surfaces: `$goal-harness` is registered in hook detection and canonical state; HUD renders `harness:<phase>`. Covered by hook, state, and HUD focused tests.
 - Completion gate: `completion.ts` requires late phase, leader actor, objective audit, non-empty implementation evidence, passing external verification, clear adversarial review, and a basin-escape convergence challenge before local validation passes. It then requires a fresh complete `get_goal` snapshot before marking the local workflow complete.
 - Lightweight aggregate status: `status.ts` summarizes stages without introducing heavy Ultragoal ledgers. Covered by `status.test.ts`.
-- Product-level install surface: `package.json` exposes the sibling `omg` bin at `dist/cli/omg.js`; `src/cli/omg-main.ts` maps `omg <command>` to the goal harness engine and documents `npx -p oh-my-codex omg ...`. Covered by `goal-harness.test.ts`, `package-bin-contract.test.ts`, and packed install smoke.
+- Product-level install surface: `package.json` exposes `oh-my-goal` and `omg` bins at `dist/cli/omg.js`; `src/cli/omg-main.ts` maps `omg <command>` to the goal harness engine and documents `npx oh-my-goal ...`. Covered by `goal-harness.test.ts`, `package-bin-contract.test.ts`, and packed install smoke.
 
 ## Latest Tightening
 
@@ -39,7 +39,7 @@ npm run check:no-unused
 npm run sync:plugin:check
 node dist/scripts/generate-catalog-docs.js --check
 npm pack --json --ignore-scripts
-npm exec --yes --package ./oh-my-codex-0.18.6.tgz -- omg --help
+npm exec --yes --package ./oh-my-goal-0.18.6.tgz -- oh-my-goal --help
 npm run smoke:packed-install
 ```
 

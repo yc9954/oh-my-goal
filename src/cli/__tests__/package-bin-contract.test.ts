@@ -37,7 +37,7 @@ describe('package bin contract', () => {
       binaryName,
     );
 
-    assert.deepEqual(pkg.bin, { omx: 'dist/cli/omx.js', omg: 'dist/cli/omg.js' });
+    assert.deepEqual(pkg.bin, { 'oh-my-goal': 'dist/cli/omg.js', omx: 'dist/cli/omx.js', omg: 'dist/cli/omg.js' });
     assert.equal(pkg.scripts?.['build:explore'], 'cargo build -p omx-explore-harness');
     assert.equal(pkg.scripts?.['build:explore:release'], 'node dist/scripts/build-explore-harness.js');
     assert.equal(pkg.scripts?.['build:full'], 'npm run build && npm run build:explore:release && npm run build:sparkshell && npm run build:api');
@@ -114,7 +114,7 @@ describe('package bin contract', () => {
     });
     assert.equal(goalHelp.status, 0, goalHelp.stderr || goalHelp.stdout);
     assert.match(goalHelp.stdout, /Oh My Goal/);
-    assert.match(goalHelp.stdout, /npx -p oh-my-codex omg/);
+    assert.match(goalHelp.stdout, /npx oh-my-goal/);
     const mcpInitialize = JSON.stringify({
       jsonrpc: '2.0',
       id: 1,

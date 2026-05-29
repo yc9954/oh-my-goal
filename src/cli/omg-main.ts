@@ -29,8 +29,8 @@ Usage:
   omg version
 
 npx:
-  npx -p oh-my-codex omg --help
-  npx -p oh-my-codex omg refine --objective "Ship this safely"
+  npx oh-my-goal --help
+  npx -p oh-my-goal omg refine --objective "Ship this safely"
 
 Boundary:
   OMG is a sibling product surface to omx for the goal-native harness. It keeps
