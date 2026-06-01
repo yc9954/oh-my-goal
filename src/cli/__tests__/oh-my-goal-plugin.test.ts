@@ -424,6 +424,7 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(runtimeSource, /close-surface/);
     assert.match(runtimeSource, /launchMacosTerminalUi/);
     assert.match(runtimeSource, /osascript/);
+    assert.match(runtimeSource, /cmux_socket_permission_blocked/);
     const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-runtime-'));
     try {
       const fakeBin = join(cwd, 'bin');
@@ -434,6 +435,10 @@ describe('oh-my-goal plugin contract', () => {
         `#!/usr/bin/env node
 const fs = require('node:fs');
 const args = process.argv.slice(2);
+if (process.env.OMG_FAKE_CMUX_EPERM === '1') {
+  console.error('Operation not permitted, errno 1');
+  process.exit(1);
+}
 if (args[0] === 'identify') {
   process.stdout.write(JSON.stringify({
     caller: { workspace_ref: 'workspace:1', surface_ref: 'surface:1', pane_ref: 'pane:1' },
@@ -645,6 +650,46 @@ process.exit(0);
       assert.equal(cmuxPromptingStatusPayload.interactive, true);
       assert.equal(cmuxPromptingStatusPayload.renderer, 'cmux-pane');
       assert.equal(cmuxPromptingStatusPayload.status, 'prompting');
+
+      const cmuxSocketBlocked = spawnSync(
+        process.execPath,
+        [
+          questionRuntimePath,
+          '--objective',
+          '계산기 앱을 웹사이트 형태로 만들어줘',
+          '--mode',
+          'auto',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        {
+          cwd: root,
+          encoding: 'utf-8',
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}:${process.env.PATH || ''}`,
+            CMUX_BUNDLED_CLI_PATH: fakeCmux,
+            CMUX_WORKSPACE_ID: 'workspace:1',
+            CMUX_SURFACE_ID: 'surface:1',
+            TMUX: '',
+            TMUX_PANE: '',
+            OMG_DISABLE_TERMINAL_BRIDGE: '1',
+            OMG_FAKE_CMUX_EPERM: '1',
+          },
+        },
+      );
+      assert.equal(cmuxSocketBlocked.status, 0, cmuxSocketBlocked.stderr || cmuxSocketBlocked.stdout);
+      const cmuxSocketBlockedPayload = JSON.parse(cmuxSocketBlocked.stdout) as {
+        ok: boolean;
+        fallback_reason?: string;
+        blocker?: string;
+        next_action?: string;
+      };
+      assert.equal(cmuxSocketBlockedPayload.ok, false);
+      assert.equal(cmuxSocketBlockedPayload.blocker, 'cmux_socket_permission_blocked');
+      assert.match(cmuxSocketBlockedPayload.fallback_reason || '', /Operation not permitted, errno 1/);
+      assert.match(cmuxSocketBlockedPayload.next_action || '', /seatbelt sandbox/);
 
       const tmuxBridge = spawnSync(
         process.execPath,
@@ -1218,6 +1263,7 @@ process.exit(0);
     assert.match(teamRuntimeSource, /CMUX_WORKSPACE_ID/);
     assert.match(teamRuntimeSource, /cmux-pane/);
     assert.match(teamRuntimeSource, /requireInteractive/);
+    assert.match(teamRuntimeSource, /cmux_socket_permission_blocked/);
     const plan = spawnSync(
       process.execPath,
       [
@@ -1519,6 +1565,10 @@ const path = require('node:path');
 const logPath = process.env.OMG_FAKE_CMUX_LOG;
 const args = process.argv.slice(2);
 if (logPath) fs.appendFileSync(logPath, JSON.stringify(args) + '\\n');
+if (process.env.OMG_FAKE_CMUX_EPERM === '1') {
+  console.error('Operation not permitted, errno 1');
+  process.exit(1);
+}
 if (args[0] === 'identify') {
   process.stdout.write(JSON.stringify({
     caller: { workspace_ref: 'workspace:1', surface_ref: 'surface:1', pane_ref: 'pane:1' },
@@ -1594,6 +1644,47 @@ process.exit(0);
       assert.match(readFileSync(cmuxLog, 'utf-8'), /"rename-tab"/);
       assert.match(readFileSync(cmuxLog, 'utf-8'), /OMG worker-1/);
       assert.match(readFileSync(cmuxLog, 'utf-8'), /"send"/);
+
+      const cmuxBlockedLaunch = spawnSync(
+        process.execPath,
+        [
+          teamRuntimePath,
+          'launch',
+          '--objective',
+          'cmux blocked worker lanes',
+          '--workers',
+          '2',
+          '--mode',
+          'auto',
+          '--require-interactive',
+          '--agent',
+          'shell',
+          '--cwd',
+          cwd,
+          '--json',
+        ],
+        {
+          cwd: root,
+          encoding: 'utf-8',
+          env: {
+            ...cmuxEnv,
+            OMG_FAKE_CMUX_EPERM: '1',
+          },
+        },
+      );
+      assert.equal(cmuxBlockedLaunch.status, 0, cmuxBlockedLaunch.stderr || cmuxBlockedLaunch.stdout);
+      const cmuxBlockedPayload = JSON.parse(cmuxBlockedLaunch.stdout) as {
+        ok: boolean;
+        status: string;
+        reason: string;
+        message?: string;
+        next_action: string;
+      };
+      assert.equal(cmuxBlockedPayload.ok, false);
+      assert.equal(cmuxBlockedPayload.status, 'blocked');
+      assert.equal(cmuxBlockedPayload.reason, 'cmux_socket_permission_blocked');
+      assert.match(cmuxBlockedPayload.message || '', /Operation not permitted, errno 1/);
+      assert.match(cmuxBlockedPayload.next_action, /seatbelt sandbox/);
 
       const cmuxStateRoot = join(cwd, cmuxLaunchPayload.state_root);
       for (const taskId of ['1', '2']) {

@@ -1,6 +1,6 @@
 {
   "name": "oh-my-goal",
-  "version": "0.18.27",
+  "version": "0.18.28",
   "description": "Codex goal-native autonomy harness with annealing backpressure",
   "type": "module",
   "main": "dist/cli/omg-main.js",

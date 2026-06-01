@@ -217,6 +217,54 @@ function cmux(args) {
   return spawnSync(cmuxBin(), args, { encoding: 'utf-8' });
 }
 
+let lastCmuxProbeFailure = null;
+
+function cmuxSocketBlockedNextAction() {
+  return [
+    'Codex is running inside the macOS seatbelt sandbox and cannot connect to the cmux Unix socket.',
+    'Run the Oh My Goal intake/team runtime from an unsandboxed external terminal, or allow an escalated cmux command in Codex, then rerun the same $oh-my-goal request.',
+  ].join(' ');
+}
+
+function cmuxFailureText(value) {
+  if (value instanceof Error) return safeString(value.message).trim();
+  if (value && typeof value === 'object') {
+    return [
+      value.error?.message,
+      value.message,
+      value.stderr,
+      value.stdout,
+    ].map(safeString).filter(Boolean).join('\n').trim();
+  }
+  return String(value || '').trim();
+}
+
+function classifyCmuxFailure(value) {
+  const message = cmuxFailureText(value);
+  const lowered = message.toLowerCase();
+  const socketBlocked = /\boperation not permitted\b|\berrno\s*1\b|\beperm\b|permission denied/.test(lowered);
+  if (value?.reason === 'cmux_socket_permission_blocked' || socketBlocked) {
+    return {
+      reason: 'cmux_socket_permission_blocked',
+      message: message || 'cmux Unix socket access was blocked by the Codex sandbox.',
+      next_action: cmuxSocketBlockedNextAction(),
+    };
+  }
+  return {
+    reason: 'cmux_unavailable',
+    message: message || 'cmux command failed.',
+    next_action: 'Open the project in cmux or tmux and rerun the Oh My Goal intake.',
+  };
+}
+
+function cmuxErrorFromResult(result, fallback) {
+  const failure = classifyCmuxFailure(result);
+  const error = new Error(failure.message || fallback);
+  error.reason = failure.reason;
+  error.next_action = failure.next_action;
+  return error;
+}
+
 function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
@@ -358,8 +406,11 @@ function currentCmuxContext() {
   if (cmuxBridgeDisabled()) return null;
   const result = cmux(['identify']);
   if (result.status === 0) {
+    lastCmuxProbeFailure = null;
     const parsed = parseCmuxIdentify(result.stdout);
     if (parsed?.workspace) return parsed;
+  } else {
+    lastCmuxProbeFailure = classifyCmuxFailure(result);
   }
   const workspace = safeString(process.env.CMUX_WORKSPACE_ID).trim();
   const surface = safeString(process.env.CMUX_SURFACE_ID).trim();
@@ -427,7 +478,7 @@ function launchCmuxUi(statePath, record) {
     '--focus',
     'true',
   ]);
-  if (result.status !== 0) throw new Error(safeString(result.stderr).trim() || 'failed to launch cmux question pane');
+  if (result.status !== 0) throw cmuxErrorFromResult(result, 'failed to launch cmux question pane');
   const target = cmuxTargetFromNewPane(`${result.stdout}\n${result.stderr}`, context.workspace);
   if (!target.surface) throw new Error('failed to resolve cmux question surface');
   if (context.surface && target.surface === context.surface) {
@@ -452,7 +503,7 @@ function launchCmuxUi(statePath, record) {
       returnMessage: 'continue',
     })}\n`,
   ]);
-  if (send.status !== 0) throw new Error(safeString(send.stderr).trim() || 'failed to send cmux question command');
+  if (send.status !== 0) throw cmuxErrorFromResult(send, 'failed to send cmux question command');
   return {
     renderer: 'cmux-pane',
     target: target.surface,
@@ -1417,19 +1468,39 @@ async function main() {
     return;
   }
   if (args.mode === 'auto') {
-    if (cmuxAvailable()) {
+    const hasCmux = cmuxAvailable();
+    const cmuxProbeFailure = lastCmuxProbeFailure;
+    if (hasCmux) {
       try {
         printPayload(await runCmuxStart(cwd, input), args.json);
         return;
       } catch (error) {
+        const cmuxFailure = classifyCmuxFailure(error);
+        if (cmuxFailure.reason === 'cmux_socket_permission_blocked') {
+          printPayload({
+            ...await runSequentialStart(cwd, input),
+            fallback_reason: `${cmuxFailure.reason}: ${cmuxFailure.message}`,
+            blocker: cmuxFailure.reason,
+            next_action: cmuxFailure.next_action,
+          }, args.json);
+          return;
+        }
         if (!tmuxAvailable() && !macosTerminalBridgeAvailable()) {
           printPayload({
             ...await runSequentialStart(cwd, input),
-            fallback_reason: `cmux-unavailable: ${error instanceof Error ? error.message : String(error)}`,
+            fallback_reason: `${cmuxFailure.reason}: ${cmuxFailure.message}`,
           }, args.json);
           return;
         }
       }
+    } else if (cmuxProbeFailure?.reason === 'cmux_socket_permission_blocked') {
+      printPayload({
+        ...await runSequentialStart(cwd, input),
+        fallback_reason: `${cmuxProbeFailure.reason}: ${cmuxProbeFailure.message}`,
+        blocker: cmuxProbeFailure.reason,
+        next_action: cmuxProbeFailure.next_action,
+      }, args.json);
+      return;
     }
     if (tmuxAvailable()) {
       printPayload(await runTmuxStart(cwd, input), args.json);

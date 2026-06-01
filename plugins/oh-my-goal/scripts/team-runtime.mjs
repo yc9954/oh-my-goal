@@ -280,6 +280,55 @@ function cmux(args) {
   return spawnSync(cmuxBin(), args, { encoding: 'utf-8' });
 }
 
+let lastCmuxProbeFailure = null;
+
+function cmuxSocketBlockedNextAction() {
+  return [
+    'Codex is running inside the macOS seatbelt sandbox and cannot connect to the cmux Unix socket.',
+    'Run Team Runtime Auto-Start from an unsandboxed external terminal, or allow an escalated cmux command in Codex, then rerun the Oh My Goal team launch.',
+    'Do not silently continue as a leader-only run unless the user explicitly accepts sequential fallback.',
+  ].join(' ');
+}
+
+function cmuxFailureText(value) {
+  if (value instanceof Error) return safeString(value.message).trim();
+  if (value && typeof value === 'object') {
+    return [
+      value.error?.message,
+      value.message,
+      value.stderr,
+      value.stdout,
+    ].map(safeString).filter(Boolean).join('\n').trim();
+  }
+  return String(value || '').trim();
+}
+
+function classifyCmuxFailure(value) {
+  const message = cmuxFailureText(value);
+  const lowered = message.toLowerCase();
+  const socketBlocked = /\boperation not permitted\b|\berrno\s*1\b|\beperm\b|permission denied/.test(lowered);
+  if (value?.reason === 'cmux_socket_permission_blocked' || socketBlocked) {
+    return {
+      reason: 'cmux_socket_permission_blocked',
+      message: message || 'cmux Unix socket access was blocked by the Codex sandbox.',
+      next_action: cmuxSocketBlockedNextAction(),
+    };
+  }
+  return {
+    reason: 'cmux_unavailable',
+    message: message || 'cmux command failed.',
+    next_action: 'Open the project in cmux or tmux and rerun Team Runtime Auto-Start.',
+  };
+}
+
+function cmuxErrorFromResult(result, fallback) {
+  const failure = classifyCmuxFailure(result);
+  const error = new Error(failure.message || fallback);
+  error.reason = failure.reason;
+  error.next_action = failure.next_action;
+  return error;
+}
+
 function currentTmuxPane() {
   if (!safeString(process.env.TMUX).trim()) return null;
   const target = safeString(process.env.TMUX_PANE).trim();
@@ -336,8 +385,11 @@ function currentCmuxContext() {
   if (cmuxBridgeDisabled()) return null;
   const result = cmux(['identify']);
   if (result.status === 0) {
+    lastCmuxProbeFailure = null;
     const parsed = parseCmuxIdentify(result.stdout);
     if (parsed?.workspace) return parsed;
+  } else {
+    lastCmuxProbeFailure = classifyCmuxFailure(result);
   }
   const workspace = safeString(process.env.CMUX_WORKSPACE_ID).trim();
   const surface = safeString(process.env.CMUX_SURFACE_ID).trim();
@@ -460,7 +512,7 @@ async function launchCmuxWorker(cwd, _root, config, worker, options = {}) {
     'true',
   ]);
   if (result.status !== 0) {
-    throw new Error(safeString(result.stderr).trim() || `failed to launch ${workerName(worker)}`);
+    throw cmuxErrorFromResult(result, `failed to launch ${workerName(worker)}`);
   }
   const target = cmuxTargetFromNewPane(`${result.stdout}\n${result.stderr}`, workspace);
   if (!target.surface) throw new Error(`failed to resolve cmux surface for ${workerName(worker)}`);
@@ -723,7 +775,9 @@ async function commandLaunch(args) {
     };
   }
   if (args.mode === 'auto') {
-    if (cmuxAvailable()) {
+    const hasCmux = cmuxAvailable();
+    const cmuxProbeFailure = lastCmuxProbeFailure;
+    if (hasCmux) {
       try {
         const launched = await launchCmuxWorkers(cwd, root, config);
         return {
@@ -735,32 +789,71 @@ async function commandLaunch(args) {
           workers: launched.workers,
         };
       } catch (error) {
+        const cmuxFailure = classifyCmuxFailure(error);
         if (!tmuxAvailable()) {
-          await appendEvent(root, { type: 'launch_degraded', reason: 'cmux_unavailable', message: error instanceof Error ? error.message : String(error) });
+          await appendEvent(root, {
+            type: 'launch_degraded',
+            reason: cmuxFailure.reason,
+            message: cmuxFailure.message,
+            next_action: cmuxFailure.next_action,
+          });
           if (args.requireInteractive) {
             return {
               ok: false,
               command: 'launch',
               status: 'blocked',
-              reason: 'cmux_unavailable',
-              message: error instanceof Error ? error.message : String(error),
+              reason: cmuxFailure.reason,
+              message: cmuxFailure.message,
               team: teamName,
               state_root: relativePath(cwd, root),
               workers: config.workers,
-              next_action: 'Open the project in cmux or tmux and rerun Team Runtime Auto-Start; do not continue as a leader-only run unless the user explicitly accepts sequential fallback.',
+              next_action: cmuxFailure.next_action,
             };
           }
           return {
             ok: false,
             command: 'launch',
             status: 'planned',
-            reason: 'cmux_unavailable',
+            reason: cmuxFailure.reason,
+            message: cmuxFailure.message,
             team: teamName,
             state_root: relativePath(cwd, root),
             workers: config.workers,
+            next_action: cmuxFailure.next_action,
           };
         }
       }
+    } else if (cmuxProbeFailure?.reason === 'cmux_socket_permission_blocked' && !tmuxAvailable()) {
+      await appendEvent(root, {
+        type: 'launch_degraded',
+        reason: cmuxProbeFailure.reason,
+        message: cmuxProbeFailure.message,
+        next_action: cmuxProbeFailure.next_action,
+      });
+      if (args.requireInteractive) {
+        return {
+          ok: false,
+          command: 'launch',
+          status: 'blocked',
+          reason: cmuxProbeFailure.reason,
+          message: cmuxProbeFailure.message,
+          team: teamName,
+          state_root: relativePath(cwd, root),
+          workers: config.workers,
+          next_action: cmuxProbeFailure.next_action,
+        };
+      }
+      return {
+        ok: false,
+        command: 'launch',
+        status: 'planned',
+        reason: cmuxProbeFailure.reason,
+        message: cmuxProbeFailure.message,
+        team: teamName,
+        state_root: relativePath(cwd, root),
+        workers: config.workers,
+        next_action: cmuxProbeFailure.next_action,
+      };
     }
     if (!tmuxAvailable()) {
       await appendEvent(root, { type: 'launch_degraded', reason: 'tmux_not_attached' });

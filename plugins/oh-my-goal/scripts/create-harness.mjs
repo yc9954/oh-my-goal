@@ -1387,8 +1387,8 @@ function artifactMap({ objective, slug, route, answers }) {
       '- Use `--notify` only when you want the runtime to send a short prompt into visible cmux/tmux worker panes.',
       '',
       teamRequired
-        ? 'If the runtime reports `blocked`, `tmux_not_attached`, `cmux_unavailable`, or another non-launched response, stop and ask the user to restart from `cmux codex-teams` or an attached tmux surface. Use sequential packets only after explicit user approval.'
-        : 'If the runtime reports `tmux_not_attached`, `cmux_unavailable`, or another planned-state response, use the generated `.omg/runtime/team/' + slug + '/workers/<worker>/prompt.md` packets sequentially.',
+        ? 'If the runtime reports `blocked`, `tmux_not_attached`, `cmux_unavailable`, `cmux_socket_permission_blocked`, or another non-launched response, stop and ask the user to restart from `cmux codex-teams`, an unsandboxed cmux terminal, or an attached tmux surface. Use sequential packets only after explicit user approval.'
+        : 'If the runtime reports `tmux_not_attached`, `cmux_unavailable`, `cmux_socket_permission_blocked`, or another planned-state response, use the generated `.omg/runtime/team/' + slug + '/workers/<worker>/prompt.md` packets sequentially.',
       '',
       'Recommended sequence:',
       '1. Leader frames the objective and acceptance map.',
