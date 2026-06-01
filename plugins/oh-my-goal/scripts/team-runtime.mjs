@@ -29,6 +29,12 @@ import {
   workerRole,
   writeJsonAtomic,
 } from './team-core.mjs';
+import {
+  cmuxBridgeStartCommand,
+  isCmuxFileBridgeFailure,
+  isCmuxSocketPermissionFailure,
+  requestCmuxViaBridge,
+} from './cmux-bridge-client.mjs';
 
 export { buildTeamExecutionPlan, sanitizeTeamName } from './team-core.mjs';
 
@@ -277,7 +283,17 @@ function cmuxBin() {
 }
 
 function cmux(args) {
-  return spawnSync(cmuxBin(), args, { encoding: 'utf-8' });
+  const result = spawnSync(cmuxBin(), args, { encoding: 'utf-8' });
+  if (result.status === 0 || cmuxBridgeDisabled() || !isCmuxSocketPermissionFailure(result)) return result;
+  const bridged = requestCmuxViaBridge(args, {
+    cwd: process.cwd(),
+    timeoutMs: Number.parseInt(safeString(process.env.OMG_CMUX_BRIDGE_TIMEOUT_MS).trim() || '10000', 10),
+  });
+  if (
+    bridged.status === 0 ||
+    (isCmuxFileBridgeFailure(bridged) && !['cmux_bridge_unavailable', 'cmux_bridge_disabled'].includes(bridged.reason))
+  ) return bridged;
+  return result;
 }
 
 let lastCmuxProbeFailure = null;
@@ -285,7 +301,7 @@ let lastCmuxProbeFailure = null;
 function cmuxSocketBlockedNextAction() {
   return [
     'Codex is running inside the macOS seatbelt sandbox and cannot connect to the cmux Unix socket.',
-    'Run Team Runtime Auto-Start from an unsandboxed external terminal, or allow an escalated cmux command in Codex, then rerun the Oh My Goal team launch.',
+    `Start the Oh My Goal cmux bridge outside Codex sandbox, then rerun Team Runtime Auto-Start: ${cmuxBridgeStartCommand(process.cwd())}`,
     'Do not silently continue as a leader-only run unless the user explicitly accepts sequential fallback.',
   ].join(' ');
 }
@@ -306,6 +322,13 @@ function cmuxFailureText(value) {
 function classifyCmuxFailure(value) {
   const message = cmuxFailureText(value);
   const lowered = message.toLowerCase();
+  if (isCmuxFileBridgeFailure(value)) {
+    return {
+      reason: value.reason,
+      message: message || 'Oh My Goal cmux file bridge could not complete the request.',
+      next_action: cmuxBridgeStartCommand(process.cwd()),
+    };
+  }
   const socketBlocked = /\boperation not permitted\b|\berrno\s*1\b|\beperm\b|permission denied/.test(lowered);
   if (value?.reason === 'cmux_socket_permission_blocked' || socketBlocked) {
     return {

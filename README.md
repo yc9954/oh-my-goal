@@ -76,6 +76,16 @@ node plugins/oh-my-goal/scripts/intake-question-runtime.mjs \
 
 Inside cmux it opens a focused in-workspace selector pane; inside attached tmux it opens a separate question pane; on macOS it can open a Terminal selector window. If no interactive renderer is available, it returns one sequential question at a time and keeps asking follow-ups until residual ambiguity is low enough and quality pruning is complete.
 
+If Codex reports `cmux_socket_permission_blocked`, cmux is healthy but the Codex seatbelt sandbox cannot connect to `cmux.sock`. Start the file bridge once from a normal cmux/terminal surface outside the sandbox, leave it running, then retry the same `$oh-my-goal` request:
+
+```bash
+node plugins/oh-my-goal/scripts/cmux-bridge-runtime.mjs start \
+  --cwd "$PWD" \
+  --root .omg/runtime/cmux-bridge
+```
+
+The bridge preserves the realtime cmux features by proxying `identify`, `new-pane`, `send`, `rename-tab`, `close-surface`, and related commands through `.omg/runtime/cmux-bridge/` request/result files. Intake panes still close themselves and return `continue`; Team `watch`/`tick` can still notify, close, and reopen visible worker panes.
+
 For visible Team-style worker lanes, use the optional Oh My Goal Team runtime:
 
 ```bash

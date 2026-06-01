@@ -10,6 +10,8 @@ node <plugin-root>/scripts/openai-key-runtime.mjs offer --cwd "<cwd>" --keys OPE
 
 Then generate intake from the Oh My Goal runtime in `auto` mode. It first reviews the current folder, then uses that review plus the objective to generate repo-specific questions. If `OPENAI_API_KEY` is configured, `--llm auto` lets the LLM add high-leverage questions; otherwise deterministic repo-aware fallback questions are used. In cmux, this opens an in-workspace ↑↓/Space/Enter selector pane, returns `continue` to the leader when submitted, and closes the temporary question surface. In attached tmux or macOS Terminal it does the same cleanup after final answer. Single-answer questions require Enter to select. In non-interactive text surfaces, it returns the next single-question prompt. The intake covers ambiguity reduction, quality pruning, design-system, Vercel deployment, LLM/API, auth, secret-handling, and credential setup decisions.
 
+If the runtime returns `blocker: "cmux_socket_permission_blocked"`, say that cmux is healthy but Codex cannot access `cmux.sock` from the seatbelt sandbox. Ask the user to start the cmux bridge from a normal cmux/terminal surface using the `next_action` command, then retry the same runtime command. Do not fall back to all-text questions unless the user declines the bridge.
+
 ```sh
 node <plugin-root>/scripts/intake-question-runtime.mjs --objective "<objective>" --cwd "<cwd>" --repo-review --llm auto --mode auto --json
 ```

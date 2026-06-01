@@ -102,6 +102,8 @@ node <plugin-root>/scripts/intake-question-runtime.mjs \
 
 Inside cmux, `auto` opens a focused in-workspace question pane. In attached tmux, it opens a separate arrow-key question pane. On macOS outside cmux/tmux, it can open a Terminal question window with the same selector. These temporary question surfaces close themselves after the final answer is recorded and the leader is notified. The UI core provides ↑↓ movement, Enter selects the current option, Space toggles `multi-answerable`, → advances the current question in the wizard, and ← goes back.
 
+If `auto` reports `cmux_socket_permission_blocked`, cmux is present but Codex's seatbelt sandbox cannot connect to `cmux.sock`. Do not downgrade to inline questions until the user declines the bridge. Tell the user to start `scripts/cmux-bridge-runtime.mjs start --cwd "$PWD" --root .omg/runtime/cmux-bridge` from a normal cmux/terminal surface outside Codex, then retry the intake runtime. The bridge keeps the same realtime behavior: cmux question pane creation, answer return, and temporary pane cleanup are proxied through request/result files.
+
 If `auto` returns `ok: false`, `interactive: true`, and `status: "prompting"`, tell the user to answer in that window and stop. Do not ask the text fallback question too. On the next user turn, read the record:
 
 ```sh

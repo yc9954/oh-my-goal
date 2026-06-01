@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +13,7 @@ const generatorPath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'create-har
 const questionEnginePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-engine.mjs');
 const questionCorePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'question-core.mjs');
 const questionRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'intake-question-runtime.mjs');
+const cmuxBridgeRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'cmux-bridge-runtime.mjs');
 const openaiKeyRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'openai-key-runtime.mjs');
 const teamCorePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'team-core.mjs');
 const teamRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'team-runtime.mjs');
@@ -20,6 +21,20 @@ const pressureRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'pres
 const designRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'design-system-runtime.mjs');
 const deploymentRuntimePath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'deployment-runtime.mjs');
 const qualityMigrationPath = join(root, 'plugins', 'oh-my-goal', 'scripts', 'migrate-quality-pruning.mjs');
+
+function sleepSync(ms: number): void {
+  const buffer = new SharedArrayBuffer(4);
+  Atomics.wait(new Int32Array(buffer), 0, 0, ms);
+}
+
+function waitForPath(path: string, timeoutMs = 1000): boolean {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    if (existsSync(path)) return true;
+    sleepSync(20);
+  }
+  return existsSync(path);
+}
 
 function readSkillRelative(path: string): string {
   return readFileSync(join(skillRoot, path), 'utf-8');
@@ -425,6 +440,8 @@ describe('oh-my-goal plugin contract', () => {
     assert.match(runtimeSource, /launchMacosTerminalUi/);
     assert.match(runtimeSource, /osascript/);
     assert.match(runtimeSource, /cmux_socket_permission_blocked/);
+    assert.match(runtimeSource, /cmux-bridge-client\.mjs/);
+    assert.match(readFileSync(cmuxBridgeRuntimePath, 'utf-8'), /oh-my-goal\.cmux-bridge\/request/);
     const cwd = mkdtempSync(join(tmpdir(), 'oh-my-goal-runtime-'));
     try {
       const fakeBin = join(cwd, 'bin');
@@ -447,6 +464,7 @@ if (args[0] === 'identify') {
   process.exit(0);
 }
 if (args[0] === 'new-pane') {
+  if (process.env.OMG_FAKE_CMUX_LOG) fs.appendFileSync(process.env.OMG_FAKE_CMUX_LOG, JSON.stringify(args) + '\\n');
   process.stdout.write('pane:99\\nsurface:99\\n');
   process.exit(0);
 }
@@ -690,6 +708,84 @@ process.exit(0);
       assert.equal(cmuxSocketBlockedPayload.blocker, 'cmux_socket_permission_blocked');
       assert.match(cmuxSocketBlockedPayload.fallback_reason || '', /Operation not permitted, errno 1/);
       assert.match(cmuxSocketBlockedPayload.next_action || '', /seatbelt sandbox/);
+
+      const questionBridgeRoot = join(cwd, 'question-cmux-bridge');
+      const questionBridgeLog = join(cwd, 'question-cmux-bridge.log');
+      const questionBridge = spawn(
+        process.execPath,
+        [
+          cmuxBridgeRuntimePath,
+          'start',
+          '--cwd',
+          cwd,
+          '--root',
+          questionBridgeRoot,
+          '--poll-ms',
+          '5',
+          '--json',
+        ],
+        {
+          cwd: root,
+          stdio: ['ignore', 'ignore', 'pipe'],
+          env: {
+            ...process.env,
+            PATH: `${fakeBin}:${process.env.PATH || ''}`,
+            CMUX_BUNDLED_CLI_PATH: fakeCmux,
+            CMUX_WORKSPACE_ID: 'workspace:1',
+            CMUX_SURFACE_ID: 'surface:1',
+            TMUX: '',
+            TMUX_PANE: '',
+            OMG_FAKE_CMUX_LOG: questionBridgeLog,
+          },
+        },
+      );
+      try {
+        assert.equal(waitForPath(join(questionBridgeRoot, 'status.json')), true);
+        const cmuxSocketBridged = spawnSync(
+          process.execPath,
+          [
+            questionRuntimePath,
+            '--objective',
+            '계산기 앱을 웹사이트 형태로 만들어줘',
+            '--mode',
+            'auto',
+            '--cwd',
+            cwd,
+            '--json',
+          ],
+          {
+            cwd: root,
+            encoding: 'utf-8',
+            env: {
+              ...process.env,
+              PATH: `${fakeBin}:${process.env.PATH || ''}`,
+              CMUX_BUNDLED_CLI_PATH: fakeCmux,
+              CMUX_WORKSPACE_ID: 'workspace:1',
+              CMUX_SURFACE_ID: 'surface:1',
+              TMUX: '',
+              TMUX_PANE: '',
+              OMG_DISABLE_TERMINAL_BRIDGE: '1',
+              OMG_FAKE_CMUX_EPERM: '1',
+              OMG_CMUX_BRIDGE_ROOT: questionBridgeRoot,
+            },
+          },
+        );
+        assert.equal(cmuxSocketBridged.status, 0, cmuxSocketBridged.stderr || cmuxSocketBridged.stdout);
+        const cmuxSocketBridgedPayload = JSON.parse(cmuxSocketBridged.stdout) as {
+          ok: boolean;
+          renderer?: { renderer?: string; target?: string };
+          answers: Array<{ answer: { selected_values: string[] } }>;
+        };
+        assert.equal(cmuxSocketBridgedPayload.ok, true);
+        assert.equal(cmuxSocketBridgedPayload.renderer?.renderer, 'cmux-pane');
+        assert.equal(cmuxSocketBridgedPayload.renderer?.target, 'surface:99');
+        assert.equal(cmuxSocketBridgedPayload.answers[0]?.answer.selected_values[0], 'polished-single-screen');
+        assert.match(readFileSync(questionBridgeLog, 'utf-8'), /"new-pane"/);
+        assert.match(readFileSync(questionBridgeLog, 'utf-8'), /"send"/);
+      } finally {
+        spawnSync(process.execPath, [cmuxBridgeRuntimePath, 'stop', '--cwd', cwd, '--root', questionBridgeRoot], { cwd: root, encoding: 'utf-8' });
+        questionBridge.kill('SIGTERM');
+      }
 
       const tmuxBridge = spawnSync(
         process.execPath,
@@ -1264,6 +1360,7 @@ process.exit(0);
     assert.match(teamRuntimeSource, /cmux-pane/);
     assert.match(teamRuntimeSource, /requireInteractive/);
     assert.match(teamRuntimeSource, /cmux_socket_permission_blocked/);
+    assert.match(teamRuntimeSource, /cmux-bridge-client\.mjs/);
     const plan = spawnSync(
       process.execPath,
       [
@@ -1837,6 +1934,72 @@ process.exit(0);
       assert.equal(scaledConfig.workers.length, 4);
       assert.equal(scaledConfig.workers[2]?.surface_id, 'surface:94');
       assert.match(readFileSync(join(cmuxStateRoot, 'workers', 'worker-3', 'prompt.md'), 'utf-8'), /Task 3/);
+
+      const teamBridgeRoot = join(cwd, 'team-cmux-bridge');
+      const teamBridge = spawn(
+        process.execPath,
+        [
+          cmuxBridgeRuntimePath,
+          'start',
+          '--cwd',
+          cwd,
+          '--root',
+          teamBridgeRoot,
+          '--poll-ms',
+          '5',
+          '--json',
+        ],
+        {
+          cwd: root,
+          stdio: ['ignore', 'ignore', 'pipe'],
+          env: cmuxEnv,
+        },
+      );
+      try {
+        assert.equal(waitForPath(join(teamBridgeRoot, 'status.json')), true);
+        const cmuxBridgeLaunch = spawnSync(
+          process.execPath,
+          [
+            teamRuntimePath,
+            'launch',
+            '--objective',
+            'cmux bridge worker lanes',
+            '--workers',
+            '2',
+            '--mode',
+            'auto',
+            '--require-interactive',
+            '--agent',
+            'shell',
+            '--cwd',
+            cwd,
+            '--json',
+          ],
+          {
+            cwd: root,
+            encoding: 'utf-8',
+            env: {
+              ...cmuxEnv,
+              OMG_FAKE_CMUX_EPERM: '1',
+              OMG_CMUX_BRIDGE_ROOT: teamBridgeRoot,
+            },
+          },
+        );
+        assert.equal(cmuxBridgeLaunch.status, 0, cmuxBridgeLaunch.stderr || cmuxBridgeLaunch.stdout);
+        const cmuxBridgeLaunchPayload = JSON.parse(cmuxBridgeLaunch.stdout) as {
+          ok: boolean;
+          status: string;
+          workers: Array<{ renderer?: string; surface_id?: string; pane_id?: string }>;
+        };
+        assert.equal(cmuxBridgeLaunchPayload.ok, true);
+        assert.equal(cmuxBridgeLaunchPayload.status, 'launched');
+        assert.equal(cmuxBridgeLaunchPayload.workers[0]?.renderer, 'cmux-pane');
+        assert.match(cmuxBridgeLaunchPayload.workers[0]?.surface_id || '', /^surface:/);
+        assert.match(cmuxBridgeLaunchPayload.workers[1]?.pane_id || '', /^pane:/);
+      } finally {
+        spawnSync(process.execPath, [cmuxBridgeRuntimePath, 'stop', '--cwd', cwd, '--root', teamBridgeRoot], { cwd: root, encoding: 'utf-8' });
+        teamBridge.kill('SIGTERM');
+      }
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

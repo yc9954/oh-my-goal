@@ -34,6 +34,8 @@ The Team bridge owns plugin-local state. `scripts/team-core.mjs` owns Oh My Goal
 
 If `--require-interactive` is present and cmux/tmux is unavailable, `--mode auto` returns `status: "blocked"` with a next action. Stop and report that blocker; use planned/sequential packets only after explicit user approval. Without `--require-interactive`, `--mode auto` degrades to planned state and worker packets.
 
+If the blocker is `cmux_socket_permission_blocked`, cmux is healthy but Codex cannot reach `cmux.sock` from the seatbelt sandbox. First try the file bridge: ask the user to start `scripts/cmux-bridge-runtime.mjs start --cwd "$PWD" --root .omg/runtime/cmux-bridge` from an unsandboxed cmux/terminal surface, leave it running, then rerun Team Runtime Auto-Start. Do not treat this as ordinary `cmux_unavailable`. The bridge preserves visible worker launch, pane renaming, `send`, `watch --notify`, `close-completed`, idle hibernation, and reopen behavior.
+
 Best cmux entry for native Codex-visible subagent panes is `cmux codex-teams`. Normal `codex` sessions can still use Oh My Goal's explicit worker panes, but `cmux codex-teams` also lets Codex-created child/subagent threads appear as managed cmux splits.
 
 When cmux is available, inspect visible worker lanes with:

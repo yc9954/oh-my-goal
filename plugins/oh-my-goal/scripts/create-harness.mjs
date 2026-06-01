@@ -892,6 +892,9 @@ function artifactMap({ objective, slug, route, answers }) {
   const designSystemMarkdown = formatDesignSystemMarkdown(designSystem);
   const pressureStatusCommand = pluginScriptCommand({ slug, script: 'pressure-runtime.mjs', args: ['status', '--slug', shellQuote(slug), '--json'] });
   const pressureTeamCommand = pluginScriptCommand({ slug, script: 'pressure-runtime.mjs', args: ['team-command', '--slug', shellQuote(slug), '--json'] });
+  const cmuxBridgeStartCommand = pluginScriptCommand({ slug, script: 'cmux-bridge-runtime.mjs', args: ['start', '--cwd', '"$PWD"', '--root', shellQuote('.omg/runtime/cmux-bridge')] });
+  const cmuxBridgeStatusCommand = pluginScriptCommand({ slug, script: 'cmux-bridge-runtime.mjs', args: ['status', '--cwd', '"$PWD"', '--root', shellQuote('.omg/runtime/cmux-bridge'), '--json'] });
+  const cmuxBridgeStopCommand = pluginScriptCommand({ slug, script: 'cmux-bridge-runtime.mjs', args: ['stop', '--cwd', '"$PWD"', '--root', shellQuote('.omg/runtime/cmux-bridge'), '--json'] });
   const pressureRecordBaselineCommand = pluginScriptCommand({
     slug,
     script: 'pressure-runtime.mjs',
@@ -1234,7 +1237,7 @@ function artifactMap({ objective, slug, route, answers }) {
     'runtime-commands.md': lines([
       '# Runtime Commands',
       '',
-      'These commands are for the Codex goal leader. The user should not need to run them manually.',
+      'These commands are for the Codex goal leader. The user should not need to run them manually, except the optional cmux bridge start command when Codex reports `cmux_socket_permission_blocked` because that bridge must run outside the Codex sandbox.',
       '',
       'The commands resolve the installed Oh My Goal plugin root at runtime through `plugin-root-resolver.mjs`; no generated command depends on the machine that created this harness.',
       'Commands read the full user objective from `objective.txt`, so the recommended Codex goal prompt can stay below the objective-length limit.',
@@ -1301,6 +1304,21 @@ function artifactMap({ objective, slug, route, answers }) {
       '```',
       '',
       'Secret rule: do not paste raw API keys into Codex chat. Use Vercel secure prompts, dashboard env vars, shell env, or uncommitted `.env.local` files.',
+      '',
+      '## CMUX Sandbox Bridge',
+      '',
+      'If Codex reports `cmux_socket_permission_blocked`, cmux itself is healthy but the Codex seatbelt sandbox cannot connect to `cmux.sock`. Start this bridge once from a normal cmux/terminal surface outside the sandbox, leave it running, then retry the Team or intake command. The bridge preserves realtime behavior by proxying `identify`, `new-pane`, `send`, `rename-tab`, `close-surface`, and related cmux calls through `.omg/runtime/cmux-bridge/` request/result files.',
+      '',
+      '```sh',
+      cmuxBridgeStartCommand,
+      '```',
+      '',
+      'Bridge status/stop:',
+      '',
+      '```sh',
+      cmuxBridgeStatusCommand,
+      cmuxBridgeStopCommand,
+      '```',
       '',
       '## Team Runtime Auto-Start',
       '',
@@ -1387,8 +1405,8 @@ function artifactMap({ objective, slug, route, answers }) {
       '- Use `--notify` only when you want the runtime to send a short prompt into visible cmux/tmux worker panes.',
       '',
       teamRequired
-        ? 'If the runtime reports `blocked`, `tmux_not_attached`, `cmux_unavailable`, `cmux_socket_permission_blocked`, or another non-launched response, stop and ask the user to restart from `cmux codex-teams`, an unsandboxed cmux terminal, or an attached tmux surface. Use sequential packets only after explicit user approval.'
-        : 'If the runtime reports `tmux_not_attached`, `cmux_unavailable`, `cmux_socket_permission_blocked`, or another planned-state response, use the generated `.omg/runtime/team/' + slug + '/workers/<worker>/prompt.md` packets sequentially.',
+        ? 'If the runtime reports `blocked`, `tmux_not_attached`, `cmux_unavailable`, `cmux_socket_permission_blocked`, or another non-launched response, first try the cmux sandbox bridge from `runtime-commands.md` when the blocker is socket permission. Otherwise stop and ask the user to restart from `cmux codex-teams`, an unsandboxed cmux terminal, or an attached tmux surface. Use sequential packets only after explicit user approval.'
+        : 'If the runtime reports `tmux_not_attached`, `cmux_unavailable`, `cmux_socket_permission_blocked`, or another planned-state response, try the cmux sandbox bridge when the blocker is socket permission; otherwise use the generated `.omg/runtime/team/' + slug + '/workers/<worker>/prompt.md` packets sequentially.',
       '',
       'Recommended sequence:',
       '1. Leader frames the objective and acceptance map.',

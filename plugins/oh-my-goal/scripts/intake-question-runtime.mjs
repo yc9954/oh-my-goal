@@ -19,6 +19,12 @@ import {
   recordQuestions,
   supportsInteractiveArrowUi,
 } from './question-core.mjs';
+import {
+  cmuxBridgeStartCommand,
+  isCmuxFileBridgeFailure,
+  isCmuxSocketPermissionFailure,
+  requestCmuxViaBridge,
+} from './cmux-bridge-client.mjs';
 
 const DEFAULT_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
 const POLL_INTERVAL_MS = 100;
@@ -214,7 +220,17 @@ function cmuxBin() {
 }
 
 function cmux(args) {
-  return spawnSync(cmuxBin(), args, { encoding: 'utf-8' });
+  const result = spawnSync(cmuxBin(), args, { encoding: 'utf-8' });
+  if (result.status === 0 || cmuxBridgeDisabled() || !isCmuxSocketPermissionFailure(result)) return result;
+  const bridged = requestCmuxViaBridge(args, {
+    cwd: process.cwd(),
+    timeoutMs: Number.parseInt(safeString(process.env.OMG_CMUX_BRIDGE_TIMEOUT_MS).trim() || '10000', 10),
+  });
+  if (
+    bridged.status === 0 ||
+    (isCmuxFileBridgeFailure(bridged) && !['cmux_bridge_unavailable', 'cmux_bridge_disabled'].includes(bridged.reason))
+  ) return bridged;
+  return result;
 }
 
 let lastCmuxProbeFailure = null;
@@ -222,7 +238,7 @@ let lastCmuxProbeFailure = null;
 function cmuxSocketBlockedNextAction() {
   return [
     'Codex is running inside the macOS seatbelt sandbox and cannot connect to the cmux Unix socket.',
-    'Run the Oh My Goal intake/team runtime from an unsandboxed external terminal, or allow an escalated cmux command in Codex, then rerun the same $oh-my-goal request.',
+    `Start the Oh My Goal cmux bridge outside Codex sandbox, then rerun the same $oh-my-goal request: ${cmuxBridgeStartCommand(process.cwd())}`,
   ].join(' ');
 }
 
@@ -242,6 +258,13 @@ function cmuxFailureText(value) {
 function classifyCmuxFailure(value) {
   const message = cmuxFailureText(value);
   const lowered = message.toLowerCase();
+  if (isCmuxFileBridgeFailure(value)) {
+    return {
+      reason: value.reason,
+      message: message || 'Oh My Goal cmux file bridge could not complete the request.',
+      next_action: cmuxBridgeStartCommand(process.cwd()),
+    };
+  }
   const socketBlocked = /\boperation not permitted\b|\berrno\s*1\b|\beperm\b|permission denied/.test(lowered);
   if (value?.reason === 'cmux_socket_permission_blocked' || socketBlocked) {
     return {
