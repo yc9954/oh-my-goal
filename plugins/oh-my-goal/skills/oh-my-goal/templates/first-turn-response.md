@@ -39,4 +39,6 @@ Reply with one selection, e.g. 1A.
 
 Stop immediately after this block. Do not add a plan, do not say you will begin implementation, and do not run the artifact generator in the same turn.
 
+If the user says to proceed, build, start, or resolve unclear details conservatively, still run intake first. Treat that wording as permission to keep questions focused, not as permission to fabricate default answers.
+
 If `auto` returns an interactive prompting payload instead of a text `prompt`, say only: "Oh My Goal intake is open in <renderer>. Select answers there; cmux will continue automatically when possible." Keep `record_path` for the next turn and do not show fallback choices.

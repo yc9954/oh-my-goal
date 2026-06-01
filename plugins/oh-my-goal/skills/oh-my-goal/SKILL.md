@@ -14,7 +14,7 @@ Use `$oh-my-goal <objective>` to turn a development idea into a Codex goal-ready
 3. Before intake, run `scripts/openai-key-runtime.mjs offer --cwd <cwd> --keys OPENAI_API_KEY,ZEP_API_KEY --json`; with a terminal, add `--execute` for yes/no + hidden input. Missing keys do not block intake. Never ask for raw API keys in chat.
 4. After preflight, ask intake until residual ambiguity is low and quality-pruning is complete, then stop.
 5. Do not create harness files, run the generator, write implementation files, call `create_goal`, or code until intake is answered.
-6. Skip the interview gate only when the user explicitly says to use defaults, skip questions, or proceed.
+6. Skip intake only on explicit "skip interview/questions" or "use defaults without asking"; "proceed" is not enough.
 
 ## Flow Files
 
@@ -28,7 +28,7 @@ Resolve `<plugin-root>` as two levels above this skill directory. Scripts live a
 
 Run `scripts/openai-key-runtime.mjs offer` before intake. It detects optional `OPENAI_API_KEY`/`ZEP_API_KEY`; `--execute` asks yes/no, hidden-inputs accepted keys to uncommitted `.env.local`, records redacted status, and never prints values. Missing keys are not a blocker.
 
-Build intake with `scripts/intake-question-engine.mjs --repo-review --llm auto`: `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values`. It reviews the folder first, lets LLM add repo-specific questions when `OPENAI_API_KEY` exists, then runs ambiguity reduction, quality-pruning, design-system, Vercel, LLM API, auth, secret-handling, and credential setup. Korean text is localized; IDs/values stay English. Use `intake-question-runtime.mjs --mode auto`; fallback is `--mode sequential` then `sequential-answer` with ambiguity score.
+Build intake with `scripts/intake-question-engine.mjs --repo-review --llm auto`: `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values`. It reviews the folder first, lets LLM add repo-specific questions when `OPENAI_API_KEY` exists, then runs ambiguity reduction, quality-pruning, design-system, deployment, LLM API, auth, secrets, and credential setup. Korean text is localized; IDs/values stay English. Use `intake-question-runtime.mjs --mode auto`; fallback is `--mode sequential` then `sequential-answer` with ambiguity score.
 
 For old harnesses, use `scripts/migrate-quality-pruning.mjs --slug <slug> --apply --json` to add quality-pruning files.
 
@@ -45,4 +45,4 @@ node <plugin-root>/scripts/create-harness.mjs \
   --answers-json '<json object with user-approved interview answers>'
 ```
 
-Use `--print-interview` only to print the questionnaire. Do not pass synthetic default answers as user answers.
+Use `--print-interview` only to print the questionnaire. Do not pass synthetic defaults as user answers.
