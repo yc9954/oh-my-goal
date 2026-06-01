@@ -91,7 +91,7 @@ function nextPerturbationId(runtime: GoalHarnessRuntimeState, blocker: string): 
 
 function recordCommand(slug: string, role: 'replanner' | 'critic' | 'tester', summary: string, noveltyScore: number): string {
   return [
-    'omx goal-harness record-trajectory',
+    'omg record-trajectory',
     `--slug ${slug}`,
     '--source worker',
     `--role ${role}`,
@@ -230,7 +230,7 @@ export async function buildGoalHarnessPerturbation(
       'Compare the active trajectory with at least one distant alternative before returning to middle or late phase.',
       'Reject any path that removes objective audit, external verification, adversarial review, or convergence challenge requirements.',
     ],
-    teamPlanCommand: `omx goal-harness team-plan --slug ${run.slug} --task ${JSON.stringify(`Run stuck perturbation ${id}: ${blocker}`)}`,
+    teamPlanCommand: `omg team-plan --slug ${run.slug} --task ${JSON.stringify(`Run stuck perturbation ${id}: ${blocker}`)}`,
     nextAction: 'Build a stuck-phase team plan, write a team packet, import worker results, then select or reject the new trajectory with evidence.',
   };
 

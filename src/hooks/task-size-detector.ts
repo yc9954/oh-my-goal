@@ -1,17 +1,10 @@
 /**
- * Task Size Detector — ported from OMC src/hooks/task-size-detector/index.ts
+ * Task Size Detector
  *
- * IMPORTANT: In OMC, this module runs at prompt time via bridge.ts hook interception
- * (mandatory enforcement). In OMX, Codex CLI does not support pre-tool hooks, so this
- * module serves as:
- *   1. Instruction generator — feeds generateKeywordDetectionSection() in emulator.ts
- *   2. Test infrastructure — verifies gate logic correctness
- *   3. Future hook readiness — will be promoted to runtime enforcement when Codex CLI
- *      adds pre-hook support
- *
- * The actual gate enforcement in OMX is advisory: AGENTS.md instructs the model to
- * self-enforce gate behavior. The model may skip the gate under edge cases (long context,
- * prompt injection, model confusion).
+ * Classifies a prompt before heavy harness work starts. Oh My Goal uses this as
+ * advisory routing: small prompts can stay lightweight, while larger or more
+ * ambiguous objectives should enter intake, quality pruning, worker-lane, and
+ * pressure-gate flows.
  */
 
 export type TaskSize = 'small' | 'medium' | 'large';

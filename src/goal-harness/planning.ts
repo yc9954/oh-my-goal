@@ -237,7 +237,7 @@ export function buildGoalHarnessRalplan(objective: string): GoalHarnessRalplan {
         'at least one alternative or critique has concrete evidence',
         'verification commands or inspection artifacts are known',
       ],
-      recommendedNextCommand: `omx goal-harness record-trajectory --slug <slug> --summary ${jsonString(preferred.label)} --evidence "<why this candidate wins>" --score ${preferred.score} --novelty-score ${preferred.noveltyScore}`,
+      recommendedNextCommand: `omg record-trajectory --slug <slug> --summary ${jsonString(preferred.label)} --evidence "<why this candidate wins>" --score ${preferred.score} --novelty-score ${preferred.noveltyScore}`,
     },
   };
 }

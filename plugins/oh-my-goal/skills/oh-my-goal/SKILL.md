@@ -1,40 +1,40 @@
 ---
 name: oh-my-goal
-description: Codex-native goal harness bootstrap. Use when the user invokes `$oh-my-goal <objective>` or wants to define a development objective, run OMX-style structured deep interview, create repo-local Markdown harness artifacts, recommend a create_goal prompt, and set up agent/orchestration plus local-optimum pressure without relying on an omx launcher.
+description: Codex-native `$oh-my-goal <objective>` intake, harness artifacts, create_goal prompt, agent lanes, and local-optimum pressure.
 ---
 
 # Oh My Goal
 
-Use `$oh-my-goal <objective>` to turn a vague development idea into a Codex goal-ready harness. Treat any text after `$oh-my-goal` as the objective and do not ask for it again.
-
-This skill is plugin-first. Do not require `omx`, `omg`, tmux, or a shell launcher.
+Use `$oh-my-goal <objective>` to turn a development idea into a Codex goal-ready harness. Treat text after `$oh-my-goal` as the objective and do not ask for it again.
 
 ## Non-Negotiable Contract
 
 1. Read `FLOW.md` before taking any action.
-2. The first `$oh-my-goal <objective>` response is an intake turn, not an execution turn.
-3. After repo/context preflight, ask structured intake questions until residual ambiguity is low enough and the quality-pruning stage is complete, then stop.
-4. Do not create harness files, run the artifact generator, write implementation files, call `create_goal`, or start coding until the user answers the intake questions.
-5. Skip the interview gate only when the user explicitly says to use defaults, skip questions, or proceed without interview.
+2. The first `$oh-my-goal <objective>` response is capability preflight first, then intake; it is not an execution turn.
+3. Before intake, run `scripts/openai-key-runtime.mjs offer --cwd <cwd> --keys OPENAI_API_KEY,ZEP_API_KEY --json`; with a terminal, add `--execute` for yes/no + hidden input. Missing keys do not block intake. Never ask for raw API keys in chat.
+4. After preflight, ask intake until residual ambiguity is low and quality-pruning is complete, then stop.
+5. Do not create harness files, run the generator, write implementation files, call `create_goal`, or code until intake is answered.
+6. Skip the interview gate only when the user explicitly says to use defaults, skip questions, or proceed.
 
 ## Flow Files
 
-- `FLOW.md` - read first.
 - `flows/00-entrypoint.md`, `flows/01-intake-gate.md`, `flows/02-artifact-generation.md`, `flows/03-goal-handoff.md`, `flows/04-orchestration.md`.
 - `templates/first-turn-response.md`, `templates/intake-fallback.md`, `templates/worker-packet.md`.
-- `references/omx-patterns.md`, `references/omx-port-map.md`.
+- `references/omg-patterns.md`, `references/omg-port-map.md`, `references/ui-ux-pro-max-analysis.md`.
 
 ## Tool Boundary
 
-Resolve `<plugin-root>` as the directory two levels above this skill directory. From `skills/oh-my-goal/SKILL.md`, the scripts live at `../../scripts/*.mjs`. Do not look for scripts under `skills/oh-my-goal/scripts/`.
+Resolve `<plugin-root>` as two levels above this skill directory. Scripts live at `../../scripts/*.mjs`. Do not look for scripts under `skills/oh-my-goal/scripts/`.
 
-Build intake with `scripts/intake-question-engine.mjs`: OMX `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values`. The schema runs ambiguity reduction, then quality-pruning. Korean objectives render Korean question/option display text while IDs and selected values stay English. `scripts/intake-question-runtime.mjs` adds cmux/tmux/macOS transport and sequential fallback with an ambiguity score: start with `--mode auto`; if it returns `status: "prompting"`, stop and later read with `--mode status --state-path <record_path>`. Continue fallback answers with `--mode sequential-answer --state-path <record_path> --answer <selection> --json` until `ok: true`.
+Run `scripts/openai-key-runtime.mjs offer` before intake. It detects optional `OPENAI_API_KEY`/`ZEP_API_KEY`; `--execute` asks yes/no, hidden-inputs accepted keys to uncommitted `.env.local`, records redacted status, and never prints values. Missing keys are not a blocker.
 
-For old harnesses that predate quality pruning, use `scripts/migrate-quality-pruning.mjs --slug <slug> --apply --json` to write migration guidance and missing quality-pruning scaffold files. It does not overwrite existing harness files.
+Build intake with `scripts/intake-question-engine.mjs --repo-review --llm auto`: `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values`. It reviews the folder first, lets LLM add repo-specific questions when `OPENAI_API_KEY` exists, then runs ambiguity reduction, quality-pruning, design-system, Vercel, LLM API, auth, secret-handling, and credential setup. Korean text is localized; IDs/values stay English. Use `intake-question-runtime.mjs --mode auto`; fallback is `--mode sequential` then `sequential-answer` with ambiguity score.
 
-When independent worker lanes help, use `scripts/team-runtime.mjs`. `scripts/omx-team-core.mjs` owns OMX-derived Team state: tasks, worker identity, `schema_version: 2` manifest, packets, status, collection, and shutdown. `team-runtime.mjs` is only cmux/tmux transport. Workers must not own the Codex goal.
+For old harnesses, use `scripts/migrate-quality-pruning.mjs --slug <slug> --apply --json` to add quality-pruning files.
 
-Generated harnesses must include `runtime-commands.md`, and `goal-prompt.md` must tell the leader to initialize `scripts/pressure-runtime.mjs` before path selection, auto-start Team runtime when lane separation is useful, and run the pressure gate before `update_goal({status: "complete"})`. Do not make the user run the `node ... team-runtime.mjs` or `node ... pressure-runtime.mjs` commands manually.
+For implementation goals, use `scripts/team-runtime.mjs`; `scripts/team-core.mjs` owns tasks, identities, packets, dynamic rebalance, status, collection, and shutdown. Mandatory-Team harnesses use `--require-interactive`; if blocked, report the cmux/tmux blocker instead of continuing leader-only. Run `team-runtime.mjs watch` or `tick` after worker changes. Use `scripts/design-system-runtime.mjs` for UI artifacts and `scripts/deployment-runtime.mjs` for Vercel/env plan/readiness/deploy. Workers must not own the Codex goal.
+
+Generated harnesses must include `objective.txt`, `runtime-commands.md`, and `plugin-root-resolver.mjs`. Keep `goal-prompt.md` compact; details belong in harness files. It must point to `scripts/pressure-runtime.mjs`, Team runtime, completion gates, and resolver commands without cache paths. Do not make the user run runtime commands manually.
 
 The bundled generator may be used only after interview completion:
 
@@ -45,4 +45,4 @@ node <plugin-root>/scripts/create-harness.mjs \
   --answers-json '<json object with user-approved interview answers>'
 ```
 
-Use `--print-interview` only to print the questionnaire. Do not pass synthetic default answers as if the user had answered.
+Use `--print-interview` only to print the questionnaire. Do not pass synthetic default answers as user answers.

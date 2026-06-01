@@ -11,12 +11,12 @@ import {
   safeString,
   sanitizeTeamName,
   writeJsonAtomic,
-} from './omx-team-core.mjs';
+} from './team-core.mjs';
 
 const PRESSURE_VERSION = 1;
 const DEFAULT_ROUTE = 'goal_first';
 const VALID_PHASES = new Set(['early', 'middle', 'late', 'stuck']);
-const VALID_ROLES = new Set(['researcher', 'implementer', 'tester', 'critic', 'architect', 'replanner']);
+const VALID_ROLES = new Set(['researcher', 'implementer', 'tester', 'critic', 'architect', 'designer', 'deployer', 'replanner']);
 const VALID_SOURCES = new Set(['leader', 'worker']);
 const VALID_STATUSES = new Set(['candidate', 'accepted', 'rejected', 'blocked']);
 
@@ -464,7 +464,7 @@ async function commandInit(args) {
   const phase = normalizePhase(args.phase);
   const state = {
     kind: 'omg.pressure-runtime/v1',
-    schema_source: 'omx.goal-harness/runtime+perturbation',
+    schema_source: 'oh-my-goal.runtime/pressure+perturbation',
     version: PRESSURE_VERSION,
     slug,
     objective,

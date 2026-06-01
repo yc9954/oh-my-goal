@@ -21,7 +21,7 @@ import {
 import type { CompletionGateEvidence } from '../policy.js';
 
 async function withTempRepo<T>(run: (cwd: string) => Promise<T>): Promise<T> {
-  const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-completion-'));
+  const cwd = await mkdtemp(join(tmpdir(), 'omg-goal-harness-completion-'));
   try {
     return await run(cwd);
   } finally {
@@ -36,6 +36,7 @@ function passingEvidence(): CompletionGateEvidence {
     implementationEvidence: ['src/goal-harness/completion.ts records the completion gate artifact.'],
     externalVerification: [{ command: 'node --test dist/goal-harness/__tests__/completion.test.js', status: 'pass', evidence: 'completion tests pass' }],
     adversarialReview: { status: 'clear', evidence: 'Late review found no missing gate requirement.' },
+    qualityPruning: { status: 'passed', candidatesConsidered: 3, selectedStrategy: 'runtime completion gate', evidence: 'Non-runtime, heavy clone, and focused gate options were compared.' },
     convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'A non-runtime gate and a heavy Ultragoal clone were considered and rejected.' },
   };
 }
@@ -99,7 +100,7 @@ describe('goal-harness completion gate artifacts', () => {
 
       assert.equal(result.reconciliation.ok, true);
       assert.equal(result.record.kind, 'status');
-      assert.equal(result.record.artifactPath, `.omx/goals/goal-harness/active-snapshot/${GOAL_HARNESS_CODEX_GOAL_STATUS}`);
+      assert.equal(result.record.artifactPath, `.omg/goals/goal-harness/active-snapshot/${GOAL_HARNESS_CODEX_GOAL_STATUS}`);
 
       const artifact = JSON.parse(await readFile(join(cwd, result.record.artifactPath), 'utf-8')) as { kind: string; snapshot: { tokenBudget: number; remainingTokens: number } };
       assert.equal(artifact.kind, 'status');
@@ -112,7 +113,7 @@ describe('goal-harness completion gate artifacts', () => {
       assert.equal(runtime.lastCodexGoalSnapshot?.tokenBudget, 50000);
       assert.doesNotMatch(buildGoalHarnessNextAction(runtime).action, /workflow is complete/);
 
-      const ledger = await readFile(join(cwd, '.omx/goals/goal-harness/active-snapshot/ledger.jsonl'), 'utf-8');
+      const ledger = await readFile(join(cwd, '.omg/goals/goal-harness/active-snapshot/ledger.jsonl'), 'utf-8');
       assert.match(ledger, /"event":"codex_goal_snapshot_synced"/);
     });
   });
@@ -158,7 +159,7 @@ describe('goal-harness completion gate artifacts', () => {
 
       assert.equal(result.decision.allowed, true);
       assert.equal(result.run.status, 'validation_passed');
-      assert.equal(result.record.artifactPath, '.omx/goals/goal-harness/completion-pass/completion-gate.json');
+      assert.equal(result.record.artifactPath, '.omg/goals/goal-harness/completion-pass/completion-gate.json');
       assert.equal(result.record.runtimePhase, 'late');
 
       const artifact = JSON.parse(await readFile(join(cwd, result.record.artifactPath), 'utf-8')) as { allowed: boolean };
@@ -167,12 +168,12 @@ describe('goal-harness completion gate artifacts', () => {
       const runtime = await readGoalHarnessRuntime(cwd, 'completion-pass');
       assert.equal(runtime.lastCompletionGate?.allowed, true);
       assert.equal(runtime.lastCompletionGate?.artifactPath, result.record.artifactPath);
-      assert.match(buildGoalHarnessNextAction(runtime).recommendedCommand ?? '', /goal-harness complete/);
+      assert.match(buildGoalHarnessNextAction(runtime).recommendedCommand ?? '', /omg complete/);
 
       const run = await readGoalWorkflowRun(cwd, 'goal-harness', 'completion-pass');
       assert.equal(run.validation?.artifactPath, result.record.artifactPath);
 
-      const ledger = await readFile(join(cwd, '.omx/goals/goal-harness/completion-pass/ledger.jsonl'), 'utf-8');
+      const ledger = await readFile(join(cwd, '.omg/goals/goal-harness/completion-pass/ledger.jsonl'), 'utf-8');
       assert.match(ledger, /"event":"completion_gate_passed"/);
       assert.match(ledger, /"event":"validation_passed"/);
     });
@@ -213,7 +214,7 @@ describe('goal-harness completion gate artifacts', () => {
       });
 
       assert.equal(result.run.status, 'complete');
-      assert.equal(result.record.artifactPath, '.omx/goals/goal-harness/completion-reconcile/codex-goal-snapshot.json');
+      assert.equal(result.record.artifactPath, '.omg/goals/goal-harness/completion-reconcile/codex-goal-snapshot.json');
       assert.equal(result.record.reconciliation.ok, true);
 
       const artifact = JSON.parse(await readFile(join(cwd, result.record.artifactPath), 'utf-8')) as { reconciliation: { ok: boolean } };
@@ -248,7 +249,7 @@ describe('goal-harness completion gate artifacts', () => {
       const runtime = await readGoalHarnessRuntime(cwd, 'completion-early');
       assert.equal(runtime.lastCompletionGate?.allowed, false);
 
-      const ledger = await readFile(join(cwd, '.omx/goals/goal-harness/completion-early/ledger.jsonl'), 'utf-8');
+      const ledger = await readFile(join(cwd, '.omg/goals/goal-harness/completion-early/ledger.jsonl'), 'utf-8');
       assert.match(ledger, /"event":"completion_gate_failed"/);
       assert.doesNotMatch(ledger, /"event":"validation_passed"/);
     });

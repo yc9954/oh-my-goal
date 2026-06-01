@@ -85,7 +85,7 @@ describe('codex goal snapshot reconciliation', () => {
   });
 
   it('reads inline JSON and path input but rejects malformed sources', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'omx-codex-goal-snapshot-'));
+    const cwd = await mkdtemp(join(tmpdir(), 'omg-codex-goal-snapshot-'));
     try {
       const fromJson = await readCodexGoalSnapshotInput('{"goal":{"objective":"A","status":"active"}}', cwd);
       assert.equal(fromJson?.objective, 'A');

@@ -14,6 +14,7 @@ Route every turn through exactly one phase:
 
 | Phase | Condition | Required action | Stop condition |
 | --- | --- | --- | --- |
+| `CAPABILITY_PREFLIGHT` | User invoked `$oh-my-goal` and optional key status is unknown | Run `openai-key-runtime.mjs offer --keys OPENAI_API_KEY,ZEP_API_KEY --json`; if attached, use `--execute` for yes/no + hidden input; continue even when missing or skipped | Redacted capability status is recorded |
 | `INTAKE_PENDING` | User invoked `$oh-my-goal` and has not answered intake | Run preflight, ask intake block | Stop after questions |
 | `INTAKE_ANSWERED` | User answered intake or approved defaults | Run gap-fill and critique | Continue to artifact generation |
 | `HARNESS_READY` | `.omg/harness/<slug>/` files exist | Summarize generated artifacts and goal prompt | Ask before goal start unless already requested |
@@ -21,6 +22,8 @@ Route every turn through exactly one phase:
 | `EXECUTION` | User approved implementation | Use orchestration and worker lanes | Finish only after completion gate |
 
 ## First-Turn Rule
+
+For `CAPABILITY_PREFLIGHT`, do not ask for raw keys in chat. Use `scripts/openai-key-runtime.mjs offer`; in an attached terminal, `offer --execute` asks whether to enable each optional key and hidden-inputs accepted values into uncommitted `.env.local`. Missing or skipped `OPENAI_API_KEY`/`ZEP_API_KEY` is not a blocker for Codex-native intake. If the later plan requires deployed secrets, route setup through Vercel env, dashboard env, or shell env.
 
 For `INTAKE_PENDING`, do not create files, run the generator, call `create_goal`, or implement code. You may inspect focused repo context first. Then use `templates/first-turn-response.md` to ask one structured intake block and wait for the user's next turn.
 

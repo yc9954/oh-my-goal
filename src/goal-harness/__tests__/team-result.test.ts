@@ -16,7 +16,7 @@ import {
 } from '../team-result.js';
 
 async function withTempRepo<T>(run: (cwd: string) => Promise<T>): Promise<T> {
-  const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-team-result-'));
+  const cwd = await mkdtemp(join(tmpdir(), 'omg-goal-harness-team-result-'));
   try {
     return await run(cwd);
   } finally {
@@ -118,7 +118,7 @@ describe('goal-harness team worker result import', () => {
       const runtime = await readGoalHarnessRuntime(cwd, 'result-import');
       assert.equal(runtime.budget.criticPassesUsed, 1);
 
-      const ledger = await readFile(join(cwd, '.omx/goals/goal-harness/result-import/ledger.jsonl'), 'utf-8');
+      const ledger = await readFile(join(cwd, '.omg/goals/goal-harness/result-import/ledger.jsonl'), 'utf-8');
       assert.match(ledger, /"event":"team_result_imported"/);
       assert.match(ledger, /"trajectoryId":"T900-imported-critic"/);
     });

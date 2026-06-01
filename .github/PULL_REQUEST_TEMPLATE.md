@@ -1,25 +1,16 @@
 ## Summary
 
-> For normal contributions, target base branch `dev`. Use `main` only when a maintainer explicitly asks for it.
+- 
 
-Describe the problem and why this change is needed.
-
-## Changes
-
--
-
-## Validation
+## Verification
 
 - [ ] `npm run build`
-- [ ] `npm test`
-- [ ] `omx doctor` (when setup/config behavior changes)
+- [ ] `npm run lint`
+- [ ] `npm run check:no-unused`
+- [ ] `npm run verify:plugin-bundle`
+- [ ] `npm run test`
 
-## Checklist
+## Notes
 
-- [ ] PR is focused and avoids unrelated changes
-- [ ] Docs updated (README/DEMO/COVERAGE/AGENTS template) when needed
-- [ ] Backward-compatibility impact considered
-
-## Related
-
-Closes #
+- Plugin install or marketplace impact:
+- Interactive intake, cmux/tmux, or generated artifact impact:

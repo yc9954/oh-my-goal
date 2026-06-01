@@ -12,7 +12,7 @@ import {
 } from '../planning.js';
 
 async function withTempRepo<T>(run: (cwd: string) => Promise<T>): Promise<T> {
-  const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-planning-'));
+  const cwd = await mkdtemp(join(tmpdir(), 'omg-goal-harness-planning-'));
   try {
     return await run(cwd);
   } finally {
@@ -53,8 +53,8 @@ describe('goal-harness intake and ralplan artifacts', () => {
       const intake = await writeGoalHarnessDeepInterview(cwd, 'planning-artifacts', new Date('2026-05-29T00:01:00Z'));
       const plan = await writeGoalHarnessRalplan(cwd, 'planning-artifacts', new Date('2026-05-29T00:02:00Z'));
 
-      assert.equal(intake.artifactPath, '.omx/goals/goal-harness/planning-artifacts/intake.md');
-      assert.equal(plan.artifactPath, '.omx/goals/goal-harness/planning-artifacts/plan.md');
+      assert.equal(intake.artifactPath, '.omg/goals/goal-harness/planning-artifacts/intake.md');
+      assert.equal(plan.artifactPath, '.omg/goals/goal-harness/planning-artifacts/plan.md');
 
       const intakeMarkdown = await readFile(join(cwd, intake.artifactPath), 'utf-8');
       const planMarkdown = await readFile(join(cwd, plan.artifactPath), 'utf-8');
@@ -62,7 +62,7 @@ describe('goal-harness intake and ralplan artifacts', () => {
       assert.match(planMarkdown, /Goal Harness Ralplan/);
       assert.match(planMarkdown, /Novelty-seeking annealing perturbation/);
 
-      const ledger = await readFile(join(cwd, '.omx/goals/goal-harness/planning-artifacts/ledger.jsonl'), 'utf-8');
+      const ledger = await readFile(join(cwd, '.omg/goals/goal-harness/planning-artifacts/ledger.jsonl'), 'utf-8');
       assert.match(ledger, /"event":"intake_emitted"/);
       assert.match(ledger, /"event":"plan_emitted"/);
     });

@@ -17,7 +17,7 @@ import {
 } from '../runtime.js';
 
 async function withTempRepo<T>(run: (cwd: string) => Promise<T>): Promise<T> {
-  const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-runtime-'));
+  const cwd = await mkdtemp(join(tmpdir(), 'omg-goal-harness-runtime-'));
   try {
     return await run(cwd);
   } finally {
@@ -34,7 +34,7 @@ describe('goal-harness runtime state', () => {
         now: new Date('2026-05-29T00:00:00Z'),
       });
 
-      assert.equal(result.runtime.runtimePath, '.omx/goals/goal-harness/runtime-init/runtime.json');
+      assert.equal(result.runtime.runtimePath, '.omg/goals/goal-harness/runtime-init/runtime.json');
       assert.equal(result.runtime.phase, 'early');
       assert.equal(result.runtime.trajectories.length, 0);
       assert.equal(result.runtime.leaderSteps.length, 0);
@@ -238,7 +238,7 @@ describe('goal-harness runtime state', () => {
 
       const next = buildGoalHarnessNextAction(runtime);
       assert.match(next.action, /completion gate/);
-      assert.match(next.recommendedCommand ?? '', /goal-harness gate/);
+      assert.match(next.recommendedCommand ?? '', /omg gate/);
       assert.match(next.recommendedCommand ?? '', /--slug late-gate/);
     });
   });
@@ -303,7 +303,7 @@ describe('goal-harness runtime state', () => {
       });
 
       const nextBeforePlan = buildGoalHarnessNextAction(await readGoalHarnessRuntime(cwd, 'team-plan'));
-      assert.match(nextBeforePlan.recommendedCommand ?? '', /goal-harness team-plan/);
+      assert.match(nextBeforePlan.recommendedCommand ?? '', /omg team-plan/);
 
       const result = await buildGoalHarnessTeamPlan(cwd, {
         slug: 'team-plan',
@@ -313,8 +313,9 @@ describe('goal-harness runtime state', () => {
 
       assert.equal(result.plan.id, 'P001-pressure-test-the-candidate-harn');
       assert.equal(result.plan.phase, 'early');
-      assert.deepEqual(result.plan.lanes.map((lane) => lane.role), ['researcher', 'architect', 'critic']);
-      assert.match(result.plan.launchHint, /omx team 3:executor/);
+      assert.deepEqual(result.plan.lanes.map((lane) => lane.role), ['researcher', 'architect', 'designer', 'critic']);
+      assert.match(result.plan.launchHint, /OMG worker lane/);
+      assert.match(result.plan.launchHint, /omg team-packet --slug team-plan/);
       assert.match(result.plan.lanes[0]?.instruction ?? '', /Do not call create_goal/);
       assert.match(result.plan.lanes[0]?.instruction ?? '', /Do not call update_goal/);
       assert.equal(result.runtime.teamPlans.length, 1);

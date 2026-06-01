@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   buildIntakeQuestionInput,
+  buildRepoAwareIntakeQuestionInput,
   localizeQuestionForLocale,
   renderQuestionInputMarkdown,
 } from './intake-question-engine.mjs';
@@ -17,12 +18,12 @@ import {
   promptForAnswersWithArrows,
   recordQuestions,
   supportsInteractiveArrowUi,
-} from './omx-question-core.mjs';
+} from './question-core.mjs';
 
 const DEFAULT_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
 const POLL_INTERVAL_MS = 100;
 const RESIDUAL_AMBIGUITY_THRESHOLD = 0.35;
-const MAX_QUESTIONS = 16;
+const MAX_QUESTIONS = 24;
 const QUALITY_QUESTION_IDS = ['qualityFrontier', 'qualityPruning', 'pruningRule'];
 const AMBIGUITY_BY_ID = {
   deliverableScope: [0.86, 'high', 'Scope changes artifacts, implementation shape, and completion evidence.'],
@@ -32,6 +33,12 @@ const AMBIGUITY_BY_ID = {
   outputMode: [0.78, 'medium-high', 'Output mode decides whether execution starts after harness creation.'],
   handoffTarget: [0.78, 'medium-high', 'Handoff target changes the final artifact and goal prompt.'],
   stack: [0.74, 'medium-high', 'Stack choice affects files, commands, and dependencies.'],
+  deploymentTarget: [0.74, 'medium-high', 'Deployment target changes framework defaults, env setup, and completion evidence.'],
+  llmApi: [0.7, 'medium-high', 'LLM API choice changes server boundaries, secret handling, and runtime checks.'],
+  authProvider: [0.7, 'medium-high', 'Auth choice affects routes, middleware, secrets, and Vercel configuration.'],
+  secretHandling: [0.78, 'medium-high', 'Secret handling must avoid leaking API keys into chat or repo files.'],
+  credentialSetup: [0.74, 'medium-high', 'Credential readiness decides whether deployment can proceed automatically or must stop at a secure prompt.'],
+  designSystemMode: [0.66, 'medium', 'Design-system depth changes UI artifacts, worker lanes, and quality gates.'],
   sourceContext: [0.72, 'medium-high', 'Source context affects repo inspection and research depth.'],
   audience: [0.66, 'medium', 'Reader changes wording and detail level.'],
   ux: [0.64, 'medium', 'UX direction affects layout and polish.'],
@@ -55,7 +62,7 @@ function safeString(value) {
 }
 
 function parseArgs(argv) {
-  const parsed = { cwd: process.cwd(), mode: 'auto', json: false };
+  const parsed = { cwd: process.cwd(), mode: 'auto', json: false, repoReview: false, llmMode: 'off' };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--json') {
@@ -76,6 +83,18 @@ function parseArgs(argv) {
     }
     if (arg === '--cwd') {
       parsed.cwd = argv[++index];
+      continue;
+    }
+    if (arg === '--repo-review') {
+      parsed.repoReview = true;
+      continue;
+    }
+    if (arg === '--no-repo-review') {
+      parsed.repoReview = false;
+      continue;
+    }
+    if (arg === '--llm') {
+      parsed.llmMode = argv[++index];
       continue;
     }
     if (arg === '--mode') {
@@ -120,7 +139,7 @@ function printHelp() {
   console.log(`oh-my-goal intake-question-runtime
 
 Usage:
-  node scripts/intake-question-runtime.mjs --objective "<objective>" [--mode auto|cmux|tmux|inline|markdown|sequential] [--locale ko|en] [--json]
+  node scripts/intake-question-runtime.mjs --objective "<objective>" [--cwd <path>] [--repo-review] [--llm off|auto|on] [--mode auto|cmux|tmux|inline|markdown|sequential] [--locale ko|en] [--json]
   node scripts/intake-question-runtime.mjs --mode status --state-path <path> [--json]
   node scripts/intake-question-runtime.mjs --mode sequential-answer --state-path <path> --answer <selection> [--json]
   node scripts/intake-question-runtime.mjs --ui --state-path <path>
@@ -131,8 +150,13 @@ Modes:
   tmux      Require tmux pane arrow-key UI and block until answered.
   inline    Ask in the current terminal; uses arrow-key UI when TTY is available.
   markdown  Print the non-interactive fallback block.
-  sequential Ask one OMX-schema question at a time with ambiguity scoring.
+  sequential Ask one Oh My Goal-schema question at a time with ambiguity scoring.
   status    Read a question record and return answered or prompting state.
+
+Repo-aware intake:
+  --repo-review inspects the current folder before asking. --llm auto uses
+  OPENAI_API_KEY when available to add repo-specific questions; otherwise it
+  keeps deterministic repo-aware fallback questions.
 `);
 }
 
@@ -176,6 +200,8 @@ function buildRecord(input, cwd) {
     objective: input.objective,
     locale: input.locale,
     questions: input.questions,
+    repo_review: input.repo_review,
+    question_generation: input.question_generation,
   };
 }
 
@@ -272,6 +298,10 @@ function launchTmuxUi(statePath, record) {
     `OMG_QUESTION_RETURN_PANE=${leaderPane}`,
     '-e',
     'OMG_QUESTION_RETURN_TRANSPORT=state',
+    '-e',
+    'OMG_QUESTION_CLOSE_ON_COMPLETE=1',
+    '-e',
+    'OMG_QUESTION_SELF_RENDERER=tmux-pane',
     process.execPath,
     scriptPath,
     '--ui',
@@ -364,6 +394,11 @@ function envAssignment(name, value) {
 function buildQuestionUiCommand(statePath, cwd, env = {}) {
   const scriptPath = fileURLToPath(import.meta.url);
   const envPrefix = [
+    envAssignment('OMG_QUESTION_CLOSE_ON_COMPLETE', env.closeOnComplete ? '1' : ''),
+    envAssignment('OMG_QUESTION_SELF_RENDERER', env.selfRenderer),
+    envAssignment('OMG_QUESTION_SELF_CMUX_WORKSPACE', env.selfCmuxWorkspace),
+    envAssignment('OMG_QUESTION_SELF_CMUX_SURFACE', env.selfCmuxSurface),
+    envAssignment('OMG_QUESTION_TERMINAL_WINDOW_ID', env.terminalWindowId),
     envAssignment('OMG_QUESTION_RETURN_TRANSPORT', 'state'),
     envAssignment('OMG_QUESTION_RETURN_CMUX_WORKSPACE', env.cmuxWorkspace),
     envAssignment('OMG_QUESTION_RETURN_CMUX_SURFACE', env.cmuxSurface),
@@ -374,7 +409,7 @@ function buildQuestionUiCommand(statePath, cwd, env = {}) {
     `cd ${shellQuote(cwd)}`,
     `printf '\\\\033]0;Oh My Goal Intake\\\\007'`,
     `${envPrefix} ${shellQuote(process.execPath)} ${shellQuote(scriptPath)} --ui --state-path ${shellQuote(statePath)}`,
-    'exit',
+    env.closeShellOnComplete ? 'exit' : '',
   ].join('; ');
 }
 
@@ -395,6 +430,9 @@ function launchCmuxUi(statePath, record) {
   if (result.status !== 0) throw new Error(safeString(result.stderr).trim() || 'failed to launch cmux question pane');
   const target = cmuxTargetFromNewPane(`${result.stdout}\n${result.stderr}`, context.workspace);
   if (!target.surface) throw new Error('failed to resolve cmux question surface');
+  if (context.surface && target.surface === context.surface) {
+    throw new Error('refusing to send question UI command to the leader surface');
+  }
   const send = cmux([
     'send',
     '--workspace',
@@ -403,6 +441,11 @@ function launchCmuxUi(statePath, record) {
     target.surface,
     '--',
     `${buildQuestionUiCommand(statePath, record.cwd || process.cwd(), {
+      closeOnComplete: true,
+      closeShellOnComplete: true,
+      selfRenderer: 'cmux-pane',
+      selfCmuxWorkspace: context.workspace,
+      selfCmuxSurface: target.surface,
       cmuxWorkspace: context.workspace,
       cmuxSurface: context.surface,
       cmuxPane: context.pane,
@@ -428,12 +471,29 @@ function macosTerminalBridgeAvailable() {
   return true;
 }
 
+function appleScriptStringExpressionWithPlaceholder(value, placeholder, expression) {
+  return safeString(value)
+    .split(placeholder)
+    .map((part) => JSON.stringify(part))
+    .join(` & ${expression} & `);
+}
+
 function launchMacosTerminalUi(statePath, record) {
   const cwd = record.cwd || process.cwd();
-  const command = buildQuestionUiCommand(statePath, cwd);
+  const terminalWindowPlaceholder = '__OMG_TERMINAL_WINDOW_ID__';
+  const command = buildQuestionUiCommand(statePath, cwd, {
+    closeOnComplete: true,
+    closeShellOnComplete: true,
+    selfRenderer: 'macos-terminal',
+    terminalWindowId: terminalWindowPlaceholder,
+  });
+  const commandExpression = appleScriptStringExpressionWithPlaceholder(command, terminalWindowPlaceholder, 'questionWindowId');
   const appleScript = [
     'tell application "Terminal"',
-    `  do script ${JSON.stringify(command)}`,
+    '  set questionTab to do script ""',
+    '  set questionWindow to front window',
+    '  set questionWindowId to id of questionWindow as string',
+    `  do script ${commandExpression} in questionTab`,
     '  activate',
     'end tell',
   ].join('\n');
@@ -930,23 +990,84 @@ function notifyQuestionReturn(_record, statePath) {
       pane,
     ]);
   }
-  cmux([
+  const sent = cmux([
     'send',
     '--workspace',
     workspace,
     '--surface',
     surface,
-    '--',
-    message,
+    `${message}\\n`,
   ]);
-  cmux([
-    'send-key',
-    '--workspace',
-    workspace,
-    '--surface',
-    surface,
-    'enter',
-  ]);
+  if (sent.status !== 0) {
+    cmux([
+      'send',
+      '--workspace',
+      workspace,
+      '--surface',
+      surface,
+      message,
+    ]);
+    cmux([
+      'send-key',
+      '--workspace',
+      workspace,
+      '--surface',
+      surface,
+      'enter',
+    ]);
+  }
+}
+
+function cleanupQuestionRenderer(record) {
+  if (safeString(process.env.OMG_QUESTION_CLOSE_ON_COMPLETE).trim() !== '1') return null;
+  const selfRenderer = safeString(process.env.OMG_QUESTION_SELF_RENDERER).trim();
+  const returnSurface = safeString(process.env.OMG_QUESTION_RETURN_CMUX_SURFACE).trim();
+  const returnPane = safeString(process.env.OMG_QUESTION_RETURN_PANE).trim();
+
+  if (selfRenderer === 'cmux-pane') {
+    const workspace = safeString(process.env.OMG_QUESTION_SELF_CMUX_WORKSPACE).trim();
+    const surface = safeString(process.env.OMG_QUESTION_SELF_CMUX_SURFACE).trim();
+    if (!workspace || !surface || surface === returnSurface) {
+      return { renderer: selfRenderer, ok: false, reason: 'missing or unsafe cmux self target' };
+    }
+    const result = cmux(['close-surface', '--workspace', workspace, '--surface', surface]);
+    return {
+      renderer: selfRenderer,
+      target: surface,
+      ok: result.status === 0,
+      reason: result.status === 0 ? 'question completed' : safeString(result.stderr).trim() || 'cmux close-surface failed',
+    };
+  }
+
+  if (selfRenderer === 'tmux-pane') {
+    const pane = currentTmuxPane();
+    if (!pane || pane === returnPane) return { renderer: selfRenderer, ok: false, reason: 'missing or unsafe tmux pane target' };
+    const result = tmux(['kill-pane', '-t', pane]);
+    return {
+      renderer: selfRenderer,
+      target: pane,
+      ok: result.status === 0,
+      reason: result.status === 0 ? 'question completed' : safeString(result.stderr).trim() || 'tmux kill-pane failed',
+    };
+  }
+
+  if (selfRenderer === 'macos-terminal') {
+    const windowId = safeString(process.env.OMG_QUESTION_TERMINAL_WINDOW_ID).trim();
+    if (!/^\d+$/.test(windowId)) return { renderer: selfRenderer, ok: false, reason: 'missing terminal window id' };
+    const result = spawnSync('osascript', ['-e', `tell application "Terminal" to if exists window id ${windowId} then close window id ${windowId} saving no`], { encoding: 'utf-8' });
+    return {
+      renderer: selfRenderer,
+      target: `window:${windowId}`,
+      ok: result.status === 0,
+      reason: result.status === 0 ? 'question completed' : safeString(result.stderr).trim() || 'terminal close failed',
+    };
+  }
+
+  return {
+    renderer: selfRenderer || record?.renderer?.renderer || 'unknown',
+    ok: false,
+    reason: 'no supported self renderer',
+  };
 }
 
 function renderSequentialPrompt(record) {
@@ -996,6 +1117,8 @@ function sequentialPromptPayload(record) {
     residual_ambiguity: record.residual_ambiguity,
     quality_pruning: record.quality_pruning,
     followup_phase: record.followup_phase,
+    repo_review: record.repo_review,
+    question_generation: record.question_generation,
     prompt: renderSequentialPrompt(record),
   };
 }
@@ -1011,6 +1134,8 @@ function interactivePromptPayload(record) {
     interactive: true,
     answers: record.answers || [],
     renderer_state: record.renderer,
+    repo_review: record.repo_review,
+    question_generation: record.question_generation,
     prompt: `Oh My Goal intake is open in ${rendererName}. Answer in that window, then continue so Codex can read ${record.record_path}.`,
   };
 }
@@ -1099,6 +1224,7 @@ async function runUi(statePath) {
       record = result.record;
       if (result.complete) {
         notifyQuestionReturn(record, statePath);
+        cleanupQuestionRenderer(record);
         return;
       }
       answers = answerEntries(record);
@@ -1133,6 +1259,7 @@ async function runUi(statePath) {
     rl?.close();
   }
   notifyQuestionReturn(record, statePath);
+  cleanupQuestionRenderer(record);
 }
 
 async function waitForAnswer(statePath, timeoutMs) {
@@ -1164,6 +1291,8 @@ function successPayload(record) {
     renderer: record.renderer,
     residual_ambiguity: record.residual_ambiguity,
     quality_pruning: record.quality_pruning,
+    repo_review: record.repo_review,
+    question_generation: record.question_generation,
   };
 }
 
@@ -1255,7 +1384,15 @@ async function main() {
   const objective = safeString(args.objective).trim();
   if (!objective) throw new Error('Missing objective.');
   const cwd = resolve(args.cwd || process.cwd());
-  const input = buildIntakeQuestionInput(objective, { locale: args.locale });
+  const builder = args.repoReview
+    ? buildRepoAwareIntakeQuestionInput
+    : async (value, options) => buildIntakeQuestionInput(value, options);
+  const input = await builder(objective, {
+    locale: args.locale,
+    cwd,
+    repoReview: args.repoReview,
+    llmMode: args.llmMode,
+  });
   const markdown = renderQuestionInputMarkdown(input);
   const timeoutMs = Number.isFinite(args.timeoutMs) && args.timeoutMs > 0 ? args.timeoutMs : DEFAULT_WAIT_TIMEOUT_MS;
 

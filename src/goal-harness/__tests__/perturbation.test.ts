@@ -15,7 +15,7 @@ import {
 } from '../runtime.js';
 
 async function withTempRepo<T>(run: (cwd: string) => Promise<T>): Promise<T> {
-  const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-perturbation-'));
+  const cwd = await mkdtemp(join(tmpdir(), 'omg-goal-harness-perturbation-'));
   try {
     return await run(cwd);
   } finally {
@@ -57,7 +57,7 @@ describe('goal-harness stuck perturbations', () => {
 
       const stuck = await readGoalHarnessRuntime(cwd, 'stuck-perturb');
       assert.equal(stuck.phase, 'stuck');
-      assert.match(buildGoalHarnessNextAction(stuck).recommendedCommand ?? '', /goal-harness perturb/);
+      assert.match(buildGoalHarnessNextAction(stuck).recommendedCommand ?? '', /omg perturb/);
 
       const result = await buildGoalHarnessPerturbation(cwd, {
         slug: 'stuck-perturb',
@@ -69,7 +69,7 @@ describe('goal-harness stuck perturbations', () => {
       assert.equal(result.artifact.phase, 'stuck');
       assert.equal(result.artifact.activeTrajectoryId, trajectory.trajectory.id);
       assert.equal(result.artifact.alternateStrategies.length, 3);
-      assert.match(result.artifact.teamPlanCommand, /goal-harness team-plan/);
+      assert.match(result.artifact.teamPlanCommand, /omg team-plan/);
       assert.match(result.artifact.nextAction, /team plan/);
 
       const markdown = await readFile(join(cwd, result.summary.artifactPath), 'utf-8');
@@ -80,7 +80,7 @@ describe('goal-harness stuck perturbations', () => {
 
       const runtime = await readGoalHarnessRuntime(cwd, 'stuck-perturb');
       assert.equal(runtime.perturbations.length, 1);
-      assert.match(buildGoalHarnessNextAction(runtime).recommendedCommand ?? '', /goal-harness team-plan/);
+      assert.match(buildGoalHarnessNextAction(runtime).recommendedCommand ?? '', /omg team-plan/);
 
       const teamPlan = await buildGoalHarnessTeamPlan(cwd, {
         slug: 'stuck-perturb',
@@ -90,7 +90,7 @@ describe('goal-harness stuck perturbations', () => {
       assert.deepEqual(teamPlan.plan.lanes.map((lane) => lane.role), ['replanner', 'critic', 'tester']);
       assert.match(buildGoalHarnessNextAction(teamPlan.runtime).recommendedCommand ?? '', /import-worker-result/);
 
-      const ledger = await readFile(join(cwd, '.omx/goals/goal-harness/stuck-perturb/ledger.jsonl'), 'utf-8');
+      const ledger = await readFile(join(cwd, '.omg/goals/goal-harness/stuck-perturb/ledger.jsonl'), 'utf-8');
       assert.match(ledger, /"event":"perturbation_built"/);
       assert.match(ledger, /"strategyCount":3/);
     });

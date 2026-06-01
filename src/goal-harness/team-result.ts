@@ -96,10 +96,12 @@ function parseRole(raw: string): GoalHarnessWorkerRole {
   const value = raw.trim();
   if (
     value === 'researcher'
+    || value === 'architect'
+    || value === 'designer'
     || value === 'implementer'
     || value === 'tester'
+    || value === 'deployer'
     || value === 'critic'
-    || value === 'architect'
     || value === 'replanner'
   ) return value;
   throw new GoalHarnessRuntimeError('Worker result is missing a valid role.');

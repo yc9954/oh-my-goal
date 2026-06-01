@@ -16,7 +16,7 @@ import {
 import type { CompletionGateEvidence } from '../policy.js';
 
 async function withTempRepo<T>(run: (cwd: string) => Promise<T>): Promise<T> {
-  const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-status-'));
+  const cwd = await mkdtemp(join(tmpdir(), 'omg-goal-harness-status-'));
   try {
     return await run(cwd);
   } finally {
@@ -31,6 +31,7 @@ function passingEvidence(): CompletionGateEvidence {
     implementationEvidence: ['summary stages are produced from mission/intake/plan/runtime/gate/snapshot artifacts'],
     externalVerification: [{ command: 'node --test dist/goal-harness/__tests__/status.test.js', status: 'pass', evidence: 'status summary tests pass' }],
     adversarialReview: { status: 'clear', evidence: 'No missing aggregate status stage found.' },
+    qualityPruning: { status: 'passed', candidatesConsidered: 3, selectedStrategy: 'artifact-aware aggregate summary', evidence: 'Status-only, heavy clone, and artifact-aware summary options were compared.' },
     convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'A heavy Ultragoal clone and a status-only shortcut were rejected in favor of a lightweight aggregate summary.' },
   };
 }
@@ -46,13 +47,13 @@ describe('goal-harness aggregate status summary', () => {
 
       const first = buildGoalHarnessArtifactAwareNextAction(cwd, created.run, runtime);
       assert.match(first.action, /deep-interview intake/);
-      assert.equal(first.recommendedCommand, 'omx goal-harness interview --slug artifact-aware-next');
+      assert.equal(first.recommendedCommand, 'omg interview --slug artifact-aware-next');
 
       await writeGoalHarnessDeepInterview(cwd, 'artifact-aware-next');
       runtime = await readGoalHarnessRuntime(cwd, 'artifact-aware-next');
       const second = buildGoalHarnessArtifactAwareNextAction(cwd, created.run, runtime);
       assert.match(second.action, /ralplan/);
-      assert.equal(second.recommendedCommand, 'omx goal-harness plan --slug artifact-aware-next');
+      assert.equal(second.recommendedCommand, 'omg plan --slug artifact-aware-next');
 
       await writeGoalHarnessRalplan(cwd, 'artifact-aware-next');
       runtime = await readGoalHarnessRuntime(cwd, 'artifact-aware-next');

@@ -2,7 +2,15 @@ import { classifyTaskSize, type TaskSizeResult } from '../hooks/task-size-detect
 
 export type GoalHarnessRoute = 'direct' | 'goal_only' | 'plan' | 'ralph_loop' | 'team_assisted';
 export type GoalHarnessPhase = 'early' | 'middle' | 'late' | 'stuck';
-export type GoalHarnessWorkerRole = 'researcher' | 'implementer' | 'tester' | 'critic' | 'architect' | 'replanner';
+export type GoalHarnessWorkerRole =
+  | 'researcher'
+  | 'architect'
+  | 'designer'
+  | 'implementer'
+  | 'tester'
+  | 'deployer'
+  | 'critic'
+  | 'replanner';
 
 export interface GoalHarnessRouteDecision {
   route: GoalHarnessRoute;
@@ -49,6 +57,12 @@ export interface CompletionGateEvidence {
   }[];
   adversarialReview?: {
     status: 'clear' | 'issues' | 'blocked';
+    evidence: string;
+  };
+  qualityPruning?: {
+    status: 'passed' | 'failed' | 'blocked';
+    candidatesConsidered: number;
+    selectedStrategy: string;
     evidence: string;
   };
   convergenceChallenge?: {
@@ -158,6 +172,7 @@ export function buildRefinedGoalPrompt(rawObjective: string): RefinedGoalPrompt 
     'The original user objective is restated as concrete deliverables and non-goals.',
     'Implementation evidence maps each deliverable to files, commands, tests, or artifacts.',
     'External verification passes with a concrete command or artifact path and inspected output.',
+    'Quality pruning compares multiple improvement directions and records the selected strategy.',
     'A basin-escape challenge compares at least two alternative strategies, adversarial critiques, and verification probes.',
     'Only the leader calls update_goal({status: "complete"}) after the completion gate passes.',
   ];
@@ -176,7 +191,7 @@ export function buildRefinedGoalPrompt(rawObjective: string): RefinedGoalPrompt 
     objective: [
       `Complete the user objective: ${objective}`,
       '',
-      'Use the goal-native OMX harness policy:',
+      'Use the goal-native OMG harness policy:',
       ...policyBullets.map((line) => `- ${line}`),
       '',
       'Completion checklist:',
@@ -196,7 +211,7 @@ export function buildGoalHarnessAnnealingChallenge(
       strategy: 'explore',
       maxAlternativeStrategies: route === 'team_assisted' ? 5 : 3,
       maxCriticPasses: 1,
-      workerLanes: route === 'team_assisted' ? ['researcher', 'architect', 'critic'] : ['critic'],
+      workerLanes: route === 'team_assisted' ? ['researcher', 'architect', 'designer', 'critic'] : ['critic'],
       requiredProbes: [
         'generate independent goal-prompt candidates',
         'identify non-goals and acceptance gaps',
@@ -212,7 +227,7 @@ export function buildGoalHarnessAnnealingChallenge(
       strategy: 'exploit',
       maxAlternativeStrategies: 2,
       maxCriticPasses: 2,
-      workerLanes: route === 'team_assisted' ? ['implementer', 'tester', 'critic'] : ['tester', 'critic'],
+      workerLanes: route === 'team_assisted' ? ['implementer', 'tester', 'deployer', 'critic'] : ['tester', 'critic'],
       requiredProbes: [
         'compare current trajectory against one simpler alternative',
         'run targeted verification before widening scope',
@@ -243,7 +258,7 @@ export function buildGoalHarnessAnnealingChallenge(
     strategy: 'converge',
     maxAlternativeStrategies: 2,
     maxCriticPasses: 2,
-    workerLanes: ['critic', 'tester', 'architect'],
+    workerLanes: route === 'team_assisted' ? ['critic', 'tester', 'deployer', 'architect'] : ['critic', 'tester', 'architect'],
     requiredProbes: [
       'attack the completion claim with missed-requirement and edge-case checks',
       'compare the current solution with an independent alternative trajectory',
@@ -317,6 +332,18 @@ export function evaluateGoalHarnessCompletionGate(evidence: CompletionGateEviden
     missing.push('clear adversarial review evidence');
   } else if (subject.adversarialReview.status !== 'clear') {
     blockers.push(`adversarial review is ${subject.adversarialReview.status}`);
+  }
+  const quality = subject.qualityPruning;
+  if (
+    !quality
+    || !hasText(quality.evidence)
+    || !hasText(quality.selectedStrategy)
+    || !Number.isFinite(quality.candidatesConsidered)
+    || quality.candidatesConsidered < 2
+  ) {
+    missing.push('quality pruning evidence with at least two improvement candidates and a selected strategy');
+  } else if (quality.status !== 'passed') {
+    blockers.push(`quality pruning is ${quality.status}`);
   }
   const convergence = subject.convergenceChallenge;
   if (

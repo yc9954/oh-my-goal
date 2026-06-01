@@ -23,7 +23,7 @@ import { buildGoalHarnessStatusSummary } from '../status.js';
 import { writeGoalHarnessTeamPacket } from '../team-packet.js';
 
 async function withTempRepo<T>(run: (cwd: string) => Promise<T>): Promise<T> {
-  const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-lifecycle-'));
+  const cwd = await mkdtemp(join(tmpdir(), 'omg-goal-harness-lifecycle-'));
   try {
     return await run(cwd);
   } finally {
@@ -41,6 +41,7 @@ function passingEvidence(command: string): CompletionGateEvidence {
     ],
     externalVerification: [{ command, status: 'pass', evidence: 'Focused goal-harness lifecycle test passed.' }],
     adversarialReview: { status: 'clear', evidence: 'Worker boundary and late completion checks were inspected in the lifecycle path.' },
+    qualityPruning: { status: 'passed', candidatesConsidered: 3, selectedStrategy: 'team-pressure path', evidence: 'Direct, team-pressure, and late-gate variants were compared for quality before completion.' },
     convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'A direct path and a Team-pressure path were compared before accepting completion.' },
   };
 }
@@ -102,7 +103,7 @@ describe('goal-harness lifecycle', () => {
         task: 'Pressure-test the selected goal-harness trajectory before late completion.',
         now: new Date('2026-05-29T00:08:00Z'),
       });
-      assert.deepEqual(teamPlan.plan.lanes.map((lane) => lane.role), ['implementer', 'tester', 'critic']);
+      assert.deepEqual(teamPlan.plan.lanes.map((lane) => lane.role), ['implementer', 'tester', 'deployer', 'critic']);
       for (const lane of teamPlan.plan.lanes) {
         assert.match(lane.instruction, /You do not own the Codex goal/);
         assert.match(lane.instruction, /Do not call create_goal/);
@@ -113,7 +114,7 @@ describe('goal-harness lifecycle', () => {
         planId: teamPlan.plan.id,
         now: new Date('2026-05-29T00:08:30Z'),
       });
-      assert.match(packet.packet.teamLaunchCommand, /omx team 3:executor/);
+      assert.match(packet.packet.teamLaunchCommand, /OMG worker lane/);
       assert.equal(packet.packet.lanes.every((lane) => lane.recordTrajectoryCommand.includes('--source worker')), true);
 
       await recordGoalHarnessTrajectory(cwd, {
@@ -179,7 +180,7 @@ describe('goal-harness lifecycle', () => {
       assert.equal(workflow.status, 'complete');
       assert.equal(workflow.metadata?.route && typeof workflow.metadata.route === 'object' && 'route' in workflow.metadata.route ? workflow.metadata.route.route : undefined, 'team_assisted');
 
-      const ledger = await readFile(join(cwd, '.omx/goals/goal-harness/full-lifecycle/ledger.jsonl'), 'utf-8');
+      const ledger = await readFile(join(cwd, '.omg/goals/goal-harness/full-lifecycle/ledger.jsonl'), 'utf-8');
       assert.match(ledger, /"event":"intake_emitted"/);
       assert.match(ledger, /"event":"plan_emitted"/);
       assert.match(ledger, /"event":"team_plan_built"/);

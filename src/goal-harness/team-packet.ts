@@ -146,7 +146,7 @@ function renderResultTemplate(slug: string, plan: GoalHarnessTeamPlan, lane: Goa
 
 function recordTrajectoryCommand(slug: string, lane: GoalHarnessTeamLanePlan): string {
   return [
-    'omx goal-harness record-trajectory',
+    'omg record-trajectory',
     `--slug ${slug}`,
     '--source worker',
     `--role ${lane.role}`,
@@ -196,7 +196,7 @@ export async function writeGoalHarnessTeamPacket(
     artifactDir,
     manifestPath,
     createdAt,
-    teamLaunchCommand: `omx team ${lanes.length}:executor ${JSON.stringify(teamLaunchTask)}`,
+    teamLaunchCommand: `Use ${lanes.length} OMG worker lane(s) with manifest ${manifestPath}. Worker task: ${teamLaunchTask}`,
     leaderInstructions: [
       'Launch Team only when independent worker pressure is worth the coordination cost.',
       'Give workers the manifest path and assign at most one lane per worker.',

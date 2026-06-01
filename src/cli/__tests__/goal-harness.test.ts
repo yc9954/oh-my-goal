@@ -4,11 +4,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { GOAL_HARNESS_HELP, goalHarnessCommand } from '../goal-harness.js';
-import { HELP } from '../index.js';
-import { OMG_HELP, main as goalProductMain, resolveOmgLaunchArgs, shouldDelegateOmgToOmx } from '../omg-main.js';
+import { OMG_HELP, main as goalProductMain, resolveOmgLaunchArgs, shouldHandleOmgCompatibilityInvocation } from '../omg-main.js';
 
 async function withCwd<T>(run: (cwd: string) => Promise<T>): Promise<T> {
-  const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-cli-'));
+  const cwd = await mkdtemp(join(tmpdir(), 'omg-goal-harness-cli-'));
   const previous = process.cwd();
   try {
     process.chdir(cwd);
@@ -43,39 +42,39 @@ function passingEvidence(): string {
     implementationEvidence: ['src/cli/goal-harness.ts enforces the goal-harness command path.'],
     externalVerification: [{ command: 'node --test dist/cli/__tests__/goal-harness.test.js', status: 'pass', evidence: 'CLI test passed.' }],
     adversarialReview: { status: 'clear', evidence: 'The CLI path rejects missing phase and weak worker evidence.' },
+    qualityPruning: { status: 'passed', candidatesConsidered: 3, selectedStrategy: 'goal-harness CLI path', evidence: 'CLI-only, direct-complete, and gated paths were compared before selection.' },
     convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'A premature no-phase advance path and a direct-complete path were tested and rejected.' },
   });
 }
 
 describe('cli/goal-harness', () => {
   it('prints help with the single-goal and worker boundary', () => {
-    assert.match(GOAL_HARNESS_HELP, /Lightweight Codex goal-native OMX harness/);
+    assert.match(GOAL_HARNESS_HELP, /Lightweight Codex goal-native harness/);
     assert.match(GOAL_HARNESS_HELP, /Workers never call create_goal or update_goal/);
-    assert.match(HELP, /omx goal-harness[\s\S]*single-goal OMX-derived autonomy harness/i);
     assert.match(OMG_HELP, /Oh My Goal/);
     assert.match(OMG_HELP, /npx oh-my-goal/);
-    assert.match(OMG_HELP, /omg setup/);
-    assert.match(OMG_HELP, /omg --madmax --high/);
+    assert.match(OMG_HELP, /plugin-first flow/);
+    assert.match(OMG_HELP, /\$oh-my-goal/);
   });
 
-  it('exposes the goal harness as the sibling omg product CLI', async () => {
+  it('exposes the goal harness as the omg product CLI', async () => {
     const help = await capture(() => goalProductMain(['--help']));
     assert.equal(help.exitCode, undefined);
     assert.match(help.stdout.join('\n'), /Oh My Goal/);
-    assert.match(help.stdout.join('\n'), /omx goal-harness <command>/);
+    assert.match(help.stdout.join('\n'), /Workers never call\s+create_goal or update_goal/);
 
     const version = await capture(() => goalProductMain(['version']));
     assert.equal(version.exitCode, undefined);
     assert.match(version.stdout.join('\n'), /^\d+\.\d+\.\d+$/);
   });
 
-  it('routes setup and launch-style omg invocations through the OMX runtime layer', () => {
-    assert.equal(shouldDelegateOmgToOmx(['setup']), true);
-    assert.equal(shouldDelegateOmgToOmx(['--madmax', '--high']), true);
-    assert.equal(shouldDelegateOmgToOmx(['doctor']), true);
-    assert.equal(shouldDelegateOmgToOmx(['status']), true);
-    assert.equal(shouldDelegateOmgToOmx(['status', '--slug', 'run-1']), false);
-    assert.equal(shouldDelegateOmgToOmx(['refine', '--objective', 'ship safely']), false);
+  it('keeps launcher-style compatibility invocations inside the plugin-first product boundary', () => {
+    assert.equal(shouldHandleOmgCompatibilityInvocation(['setup']), true);
+    assert.equal(shouldHandleOmgCompatibilityInvocation(['--madmax', '--high']), true);
+    assert.equal(shouldHandleOmgCompatibilityInvocation(['doctor']), true);
+    assert.equal(shouldHandleOmgCompatibilityInvocation(['status']), false);
+    assert.equal(shouldHandleOmgCompatibilityInvocation(['status', '--slug', 'run-1']), false);
+    assert.equal(shouldHandleOmgCompatibilityInvocation(['refine', '--objective', 'ship safely']), false);
   });
 
   it('creates artifacts and emits a truthful Codex goal handoff', async () => {
@@ -86,16 +85,16 @@ describe('cli/goal-harness', () => {
         '--slug', 'cli-harness',
       ]));
       assert.equal(created.exitCode, undefined);
-      assert.match(created.stdout.join('\n'), /goal-harness created: cli-harness/);
+      assert.match(created.stdout.join('\n'), /omg created: cli-harness/);
 
       const handoff = await capture(() => goalHarnessCommand(['start', '--slug', 'cli-harness']));
       const output = handoff.stdout.join('\n');
       assert.match(output, /goal-harness Codex goal handoff/);
       assert.match(output, /Keep one Codex goal as the top-level objective/);
       assert.match(output, /The leader is the only actor allowed to call update_goal/);
-      assert.match(output, /omx goal-harness gate --slug cli-harness/);
+      assert.match(output, /omg gate --slug cli-harness/);
 
-      const mission = await readFile(join(cwd, '.omx/goals/goal-harness/cli-harness/mission.md'), 'utf-8');
+      const mission = await readFile(join(cwd, '.omg/goals/goal-harness/cli-harness/mission.md'), 'utf-8');
       assert.match(mission, /Only the leader owns the Codex goal/);
       assert.match(mission, /runtime\.json/);
     });
@@ -116,12 +115,11 @@ describe('cli/goal-harness', () => {
       assert.match(output, /Codex goal handoff:/);
       assert.match(output, /create_goal payload:/);
       assert.match(output, /omg gate --slug omg-bootstrap/);
-      assert.doesNotMatch(output, /omx goal-harness gate --slug omg-bootstrap/);
 
-      const mission = await readFile(join(cwd, '.omx/goals/goal-harness/omg-bootstrap/mission.md'), 'utf-8');
-      const intake = await readFile(join(cwd, '.omx/goals/goal-harness/omg-bootstrap/intake.md'), 'utf-8');
-      const plan = await readFile(join(cwd, '.omx/goals/goal-harness/omg-bootstrap/plan.md'), 'utf-8');
-      const status = JSON.parse(await readFile(join(cwd, '.omx/goals/goal-harness/omg-bootstrap/status.json'), 'utf-8')) as { status: string };
+      const mission = await readFile(join(cwd, '.omg/goals/goal-harness/omg-bootstrap/mission.md'), 'utf-8');
+      const intake = await readFile(join(cwd, '.omg/goals/goal-harness/omg-bootstrap/intake.md'), 'utf-8');
+      const plan = await readFile(join(cwd, '.omg/goals/goal-harness/omg-bootstrap/plan.md'), 'utf-8');
+      const status = JSON.parse(await readFile(join(cwd, '.omg/goals/goal-harness/omg-bootstrap/status.json'), 'utf-8')) as { status: string };
       assert.match(mission, /Goal Harness Mission/);
       assert.match(intake, /Goal Harness Deep Interview/);
       assert.match(plan, /Goal Harness Ralplan/);
@@ -145,7 +143,6 @@ describe('cli/goal-harness', () => {
       assert.match(prompt, /Use the existing OMG goal-harness run/);
       assert.match(prompt, /create_goal payload:/);
       assert.match(prompt, /omg gate --slug launch-handoff/);
-      assert.doesNotMatch(prompt, /omx goal-harness gate --slug launch-handoff/);
 
       const explicit = await resolveOmgLaunchArgs(['--madmax', '--high', 'Do plain Codex work'], cwd);
       assert.deepEqual(explicit, { args: ['--madmax', '--high', 'Do plain Codex work'] });
@@ -228,12 +225,12 @@ describe('cli/goal-harness', () => {
 
       const first = await capture(() => goalHarnessCommand(['next', '--slug', 'cli-next-flow']));
       assert.match(first.stdout.join('\n'), /deep-interview intake/);
-      assert.match(first.stdout.join('\n'), /goal-harness interview --slug cli-next-flow/);
+      assert.match(first.stdout.join('\n'), /omg interview --slug cli-next-flow/);
 
       await capture(() => goalHarnessCommand(['interview', '--slug', 'cli-next-flow']));
       const second = await capture(() => goalHarnessCommand(['next', '--slug', 'cli-next-flow']));
       assert.match(second.stdout.join('\n'), /ralplan/);
-      assert.match(second.stdout.join('\n'), /goal-harness plan --slug cli-next-flow/);
+      assert.match(second.stdout.join('\n'), /omg plan --slug cli-next-flow/);
     });
   });
 
@@ -306,7 +303,7 @@ describe('cli/goal-harness', () => {
         '--codex-goal-json', JSON.stringify({ goal: { objective: payload.run.objective, status: 'complete' } }),
       ]));
       assert.equal(completed.exitCode, undefined);
-      assert.match(completed.stdout.join('\n'), /goal-harness complete: cli-completion/);
+      assert.match(completed.stdout.join('\n'), /omg complete: cli-completion/);
       assert.match(completed.stdout.join('\n'), /matched a fresh complete get_goal snapshot/);
     });
   });

@@ -5,13 +5,11 @@ import { fileURLToPath } from 'node:url';
 import type { GoalWorkflowRun } from '../goal-workflows/artifacts.js';
 import { GOAL_HARNESS_WORKFLOW, startGoalHarnessRun } from '../goal-harness/artifacts.js';
 import { GOAL_HARNESS_HELP, goalHarnessCommand } from './goal-harness.js';
-import { main as omxMain } from './index.js';
 
 export const OMG_HELP = `omg - Oh My Goal, a Codex goal-native autonomy harness
 
 Usage:
-  omg setup [--scope <project|user|auto>] [--merge-agents]
-  omg --madmax --high
+  omg help
   omg refine [--objective <text> | --objective-file <path>] [--json]
   omg interview [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
   omg plan [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
@@ -30,7 +28,7 @@ Usage:
   omg team-packet --slug <slug> [--plan-id <id>] [--json]
   omg import-worker-result --slug <slug> --result <path> [--id <id>] [--status <candidate|accepted|rejected|blocked>] [--json]
   omg challenge [--objective <text>] [--phase <early|middle|late|stuck>] [--json]
-  omg worker-instruction --role <researcher|implementer|tester|critic|architect|replanner> --task <text> [--context <text>] [--json]
+  omg worker-instruction --role <researcher|architect|designer|implementer|tester|deployer|critic|replanner> --task <text> [--context <text>] [--json]
   omg gate [--slug <slug>] --evidence-json <json-or-path> [--json]
   omg complete --slug <slug> --codex-goal-json <json-or-path> [--evidence <text>] [--json]
   omg version
@@ -39,17 +37,20 @@ npx:
   npx oh-my-goal --help
   npx -p oh-my-goal omg refine --objective "Ship this safely"
 
-Recommended first run:
+Recommended plugin-first flow:
   codex --version
-  npm install -g --install-links=true github:yc9954/oh-my-goal
-  omg setup
-  omg start "Build the thing I actually want"
-  omg --madmax --high
+  codex plugin marketplace add yc9954/oh-my-goal --ref main
+  codex plugin add oh-my-goal@oh-my-goal-local
+  codex
+  $oh-my-goal Build the thing I actually want
 
 Boundary:
-  OMG is a sibling product surface to omx for the goal-native harness. It keeps
-  one Codex goal as the top-level objective; workers never call create_goal or
-  update_goal. The equivalent OMX surface is: omx goal-harness <command>.
+  OMG keeps one Codex goal as the top-level objective. Workers never call
+  create_goal or update_goal; they return evidence to the leader.
+
+Launcher compatibility:
+  This package does not install or launch a separate runtime. Use Codex with the
+  $oh-my-goal skill, or use omg start/create/refine to generate goal handoffs.
 `;
 
 function packageVersion(): string {
@@ -59,30 +60,6 @@ function packageVersion(): string {
   return pkg.version ?? 'unknown';
 }
 
-const GOAL_HARNESS_COMMANDS = new Set([
-  'refine',
-  'interview',
-  'plan',
-  'create',
-  'start',
-  'sync-goal',
-  'summary',
-  'next',
-  'advance',
-  'step',
-  'perturb',
-  'record-trajectory',
-  'select',
-  'team-plan',
-  'team-packet',
-  'import-worker-result',
-  'challenge',
-  'worker-instruction',
-  'gate',
-  'complete',
-  'omx-help',
-]);
-
 function translateHelp(command: string): string {
   return command === 'help' || command === '--help' || command === '-h'
     ? 'help'
@@ -90,15 +67,15 @@ function translateHelp(command: string): string {
 }
 
 function displayOmgText(text: string): string {
-  return text.replaceAll('omx goal-harness', 'omg');
+  return text;
 }
 
-export function shouldDelegateOmgToOmx(args: readonly string[]): boolean {
+export function shouldHandleOmgCompatibilityInvocation(args: readonly string[]): boolean {
   const command = translateHelp(args[0] ?? 'help');
   if (command === 'help' || command === 'version' || command === '--version' || command === '-v') return false;
-  if (command === 'status') return !args.includes('--slug');
+  if (command === 'setup' || command === 'doctor' || command === 'launch') return true;
   if (command.startsWith('-')) return true;
-  return !GOAL_HARNESS_COMMANDS.has(command);
+  return false;
 }
 
 const CODEX_VALUE_FLAGS = new Set([
@@ -159,7 +136,7 @@ async function readRun(path: string): Promise<GoalWorkflowRun | undefined> {
 }
 
 export async function findLatestLaunchableGoalHarnessRun(cwd: string): Promise<GoalWorkflowRun | undefined> {
-  const root = join(cwd, '.omx', 'goals', GOAL_HARNESS_WORKFLOW);
+  const root = join(cwd, '.omg', 'goals', GOAL_HARNESS_WORKFLOW);
   let entries: string[];
   try {
     entries = await readdir(root);
@@ -196,14 +173,23 @@ export async function main(args: string[]): Promise<void> {
     console.log(packageVersion());
     return;
   }
-  if (command === 'omx-help') {
+  if (command === 'harness-help') {
     console.log(GOAL_HARNESS_HELP);
     return;
   }
-  if (shouldDelegateOmgToOmx(args)) {
+  if (shouldHandleOmgCompatibilityInvocation(args)) {
     const launch = await resolveOmgLaunchArgs(args);
-    if (launch.slug) console.error(`[omg] launching with goal harness: ${launch.slug}`);
-    await omxMain(launch.args);
+    console.log('Oh My Goal is plugin-first; this CLI does not launch a separate runtime.');
+    console.log('Use Codex in the target project and invoke:');
+    console.log('');
+    console.log('$oh-my-goal <objective>');
+    if (launch.slug) {
+      console.log('');
+      console.log(`Latest goal-harness run: ${launch.slug}`);
+      console.log('Recommended prompt for Codex:');
+      console.log('');
+      console.log(launch.args.at(-1) ?? '');
+    }
     return;
   }
 

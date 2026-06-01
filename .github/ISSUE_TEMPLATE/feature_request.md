@@ -1,23 +1,22 @@
 ---
 name: Feature request
-about: Suggest an enhancement for oh-my-codex
-title: "[Feature] "
+about: Suggest an Oh My Goal enhancement
+title: "feat: "
 labels: enhancement
-assignees: ''
 ---
 
-## Problem
+## Goal
 
-What user problem are you trying to solve?
+What user workflow should this improve?
 
-## Proposed solution
+## Proposed Behavior
 
-Describe your preferred solution.
+Describe the desired plugin, intake, harness, worker-lane, pressure, design, or deployment behavior.
 
-## Alternatives considered
+## Acceptance Criteria
 
-Any alternatives or workarounds you considered.
+- 
 
-## Additional context
+## Non-Goals
 
-Include examples, references, or mock command usage.
+- 

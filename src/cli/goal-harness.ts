@@ -62,30 +62,30 @@ import {
   importGoalHarnessWorkerResult,
 } from '../goal-harness/team-result.js';
 
-export const GOAL_HARNESS_HELP = `omx goal-harness - Lightweight Codex goal-native OMX harness with annealing backpressure
+export const GOAL_HARNESS_HELP = `omg - Lightweight Codex goal-native harness with annealing backpressure
 
 Usage:
-  omx goal-harness refine [--objective <text> | --objective-file <path>] [--json]
-  omx goal-harness interview [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
-  omx goal-harness plan [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
-  omx goal-harness create [--objective <text> | --objective-file <path>] [--slug <slug>] [--force] [--json]
-  omx goal-harness start [--slug <slug>] [--objective <text> | --objective-file <path>] [--force] [--json]
-  omx goal-harness status --slug <slug> [--json]
-  omx goal-harness sync-goal --slug <slug> --codex-goal-json <json-or-path> [--evidence <text>] [--json]
-  omx goal-harness summary --slug <slug> [--json]
-  omx goal-harness next --slug <slug> [--json]
-  omx goal-harness advance --slug <slug> --phase <early|middle|late|stuck> [--evidence <text>] [--json]
-  omx goal-harness step --slug <slug> --outcome <progress|blocked|ready-for-late-gate|needs-team-pressure> --evidence <text> [--action <text>] [--next-action <text>] [--json]
-  omx goal-harness perturb --slug <slug> [--blocker <text>] [--json]
-  omx goal-harness record-trajectory --slug <slug> --summary <text> --evidence <text> [--source <leader|worker>] [--role <role>] [--score <0-100>] [--novelty-score <0-100>] [--status <candidate|accepted|rejected|blocked>] [--id <id>] [--json]
-  omx goal-harness select --slug <slug> --trajectory-id <id> --evidence <text> [--json]
-  omx goal-harness team-plan --slug <slug> [--task <text>] [--json]
-  omx goal-harness team-packet --slug <slug> [--plan-id <id>] [--json]
-  omx goal-harness import-worker-result --slug <slug> --result <path> [--id <id>] [--status <candidate|accepted|rejected|blocked>] [--json]
-  omx goal-harness challenge [--objective <text>] [--phase <early|middle|late|stuck>] [--json]
-  omx goal-harness worker-instruction --role <researcher|implementer|tester|critic|architect|replanner> --task <text> [--context <text>] [--json]
-  omx goal-harness gate [--slug <slug>] --evidence-json <json-or-path> [--json]
-  omx goal-harness complete --slug <slug> --codex-goal-json <json-or-path> [--evidence <text>] [--json]
+  omg refine [--objective <text> | --objective-file <path>] [--json]
+  omg interview [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
+  omg plan [--slug <slug> | --objective <text> | --objective-file <path>] [--json]
+  omg create [--objective <text> | --objective-file <path>] [--slug <slug>] [--force] [--json]
+  omg start [--slug <slug>] [--objective <text> | --objective-file <path>] [--force] [--json]
+  omg status --slug <slug> [--json]
+  omg sync-goal --slug <slug> --codex-goal-json <json-or-path> [--evidence <text>] [--json]
+  omg summary --slug <slug> [--json]
+  omg next --slug <slug> [--json]
+  omg advance --slug <slug> --phase <early|middle|late|stuck> [--evidence <text>] [--json]
+  omg step --slug <slug> --outcome <progress|blocked|ready-for-late-gate|needs-team-pressure> --evidence <text> [--action <text>] [--next-action <text>] [--json]
+  omg perturb --slug <slug> [--blocker <text>] [--json]
+  omg record-trajectory --slug <slug> --summary <text> --evidence <text> [--source <leader|worker>] [--role <role>] [--score <0-100>] [--novelty-score <0-100>] [--status <candidate|accepted|rejected|blocked>] [--id <id>] [--json]
+  omg select --slug <slug> --trajectory-id <id> --evidence <text> [--json]
+  omg team-plan --slug <slug> [--task <text>] [--json]
+  omg team-packet --slug <slug> [--plan-id <id>] [--json]
+  omg import-worker-result --slug <slug> --result <path> [--id <id>] [--status <candidate|accepted|rejected|blocked>] [--json]
+  omg challenge [--objective <text>] [--phase <early|middle|late|stuck>] [--json]
+  omg worker-instruction --role <researcher|architect|designer|implementer|tester|deployer|critic|replanner> --task <text> [--context <text>] [--json]
+  omg gate [--slug <slug>] --evidence-json <json-or-path> [--json]
+  omg complete --slug <slug> --codex-goal-json <json-or-path> [--evidence <text>] [--json]
 
 Boundary:
   The leader owns the single Codex goal. Workers never call create_goal or update_goal.
@@ -96,7 +96,7 @@ Boundary:
 export class GoalHarnessCommandError extends Error {}
 
 export interface GoalHarnessCommandOptions {
-  commandPrefix?: 'omx goal-harness' | 'omg';
+  commandPrefix?: 'legacy' | 'omg';
 }
 
 function hasFlag(args: readonly string[], flag: string): boolean {
@@ -154,10 +154,12 @@ function parsePhase(raw: string | undefined): GoalHarnessPhase {
 function parseRole(raw: string | undefined): GoalHarnessWorkerRole {
   if (
     raw === 'researcher'
+    || raw === 'architect'
+    || raw === 'designer'
     || raw === 'implementer'
     || raw === 'tester'
+    || raw === 'deployer'
     || raw === 'critic'
-    || raw === 'architect'
     || raw === 'replanner'
   ) return raw;
   throw new GoalHarnessCommandError('Missing or invalid --role.');
@@ -198,17 +200,15 @@ function printJson(value: unknown): void {
 }
 
 function printRefinement(refinement: ReturnType<typeof buildRefinedGoalPrompt>): void {
-  console.log('goal-harness refined objective:');
+  console.log('omg refined objective:');
   console.log(refinement.objective);
   console.log('');
   console.log(`route: ${refinement.route.route} (${refinement.route.reason})`);
   console.log(`recommended skills: ${refinement.route.recommendedSkills.join(', ') || 'none'}`);
 }
 
-function displayText(text: string, options: GoalHarnessCommandOptions): string {
-  return options.commandPrefix === 'omg'
-    ? text.replaceAll('omx goal-harness', 'omg')
-    : text;
+function displayText(text: string, _options: GoalHarnessCommandOptions): string {
+  return text;
 }
 
 function printBootstrapSummary(result: {
@@ -305,7 +305,7 @@ export async function goalHarnessCommand(args: string[], options: GoalHarnessCom
       });
       if (json) printJson({ ok: true, ...result });
       else {
-        console.log(`goal-harness created: ${result.run.slug}`);
+        console.log(`omg created: ${result.run.slug}`);
         console.log(`status: ${result.run.statusPath}`);
         console.log(`mission: ${result.missionPath}`);
         console.log(`route: ${result.refinement.route.route}`);
@@ -378,7 +378,7 @@ export async function goalHarnessCommand(args: string[], options: GoalHarnessCom
       const summary = await buildGoalHarnessStatusSummary(cwd, slug);
       if (json) printJson({ ok: true, ...summary });
       else {
-        console.log(`goal-harness summary: ${summary.aggregate.slug} [${summary.aggregate.workflowStatus}]`);
+        console.log(`omg summary: ${summary.aggregate.slug} [${summary.aggregate.workflowStatus}]`);
         console.log(`aggregate: ${summary.aggregate.completedStages}/${summary.aggregate.totalStages}`);
         console.log(`phase: ${summary.aggregate.phase}`);
         console.log('stages:');
@@ -438,7 +438,7 @@ export async function goalHarnessCommand(args: string[], options: GoalHarnessCom
         evidence: readValue(rest, '--evidence'),
       });
       if (json) printJson({ ok: true, runtime, nextAction: buildGoalHarnessNextAction(runtime) });
-      else console.log(`goal-harness advanced: ${runtime.slug} -> ${runtime.phase}`);
+      else console.log(`omg advanced: ${runtime.slug} -> ${runtime.phase}`);
       return;
     }
 
@@ -620,9 +620,9 @@ export async function goalHarnessCommand(args: string[], options: GoalHarnessCom
       });
       if (json) printJson({ ok: true, ...result });
       else {
-        console.log(`goal-harness complete: ${result.run.slug}`);
+        console.log(`omg complete: ${result.run.slug}`);
         console.log(`codex goal snapshot: ${result.record.artifactPath}`);
-        console.log('Codex goal reconciliation: matched a fresh complete get_goal snapshot; OMX workflow completion is now durable.');
+        console.log('Codex goal reconciliation: matched a fresh complete get_goal snapshot; OMG workflow completion is now durable.');
       }
       return;
     }

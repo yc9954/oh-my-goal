@@ -58,7 +58,7 @@ export function buildGoalHarnessArtifactAwareNextAction(
         phase: runtime.phase,
         action: 'write deep-interview intake before recording trajectories',
         reason: 'route recommends deep-interview and no intake artifact exists',
-        recommendedCommand: `omx goal-harness interview --slug ${runtime.slug}`,
+        recommendedCommand: `omg interview --slug ${runtime.slug}`,
       };
     }
     if (runtime.route.recommendedSkills.includes('ralplan') && !artifactExists(cwd, planPath)) {
@@ -66,7 +66,7 @@ export function buildGoalHarnessArtifactAwareNextAction(
         phase: runtime.phase,
         action: 'write ralplan candidate/critique artifact before selecting trajectories',
         reason: 'route recommends ralplan and no plan artifact exists',
-        recommendedCommand: `omx goal-harness plan --slug ${runtime.slug}`,
+        recommendedCommand: `omg plan --slug ${runtime.slug}`,
       };
     }
   }

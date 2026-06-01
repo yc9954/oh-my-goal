@@ -539,10 +539,14 @@ function roleTask(role: GoalHarnessWorkerRole, task: string): string {
       return `Research independent alternatives for: ${task}. Return sources, assumptions, and a scored recommendation.`;
     case 'architect':
       return `Design a structurally different trajectory for: ${task}. Return tradeoffs, integration risk, and score.`;
+    case 'designer':
+      return `Pressure-test the UI, interaction model, accessibility, and design-system fit for: ${task}. Return quality risks, visual decisions, and score.`;
     case 'implementer':
       return `Implement or prototype the selected trajectory for: ${task}. Return diff summary, touched files, and blockers.`;
     case 'tester':
       return `Verify the current trajectory for: ${task}. Return commands, results, uncovered gaps, and confidence score.`;
+    case 'deployer':
+      return `Prepare release, environment, secret-handling, and deployment evidence for: ${task}. Return commands, blockers, URLs or artifacts, and score.`;
     case 'critic':
       return `Adversarially review the current trajectory for: ${task}. Return missed requirements, risks, and disconfirming evidence.`;
     case 'replanner':
@@ -593,7 +597,7 @@ export async function buildGoalHarnessTeamPlan(
     phase: runtime.phase,
     task,
     lanes,
-    launchHint: `omx team ${lanes.length}:executor ${JSON.stringify(task)}`,
+    launchHint: `Use ${lanes.length} OMG worker lane(s) from this plan; generate packets with omg team-packet --slug ${run.slug} --plan-id <plan-id>.`,
     createdAt: now,
   };
   runtime.teamPlans.push(plan);
@@ -626,7 +630,7 @@ export function buildGoalHarnessNextAction(runtime: GoalHarnessRuntimeState): Go
       phase: runtime.phase,
       action: 'build a bounded team-lane plan before committing further',
       reason: `leader step ${lastStep.id} requested external worker pressure`,
-      recommendedCommand: `omx goal-harness team-plan --slug ${runtime.slug} --task "<worker pressure task>"`,
+      recommendedCommand: `omg team-plan --slug ${runtime.slug} --task "<worker pressure task>"`,
     };
   }
   if (hasCompletionSnapshot) {
@@ -641,7 +645,7 @@ export function buildGoalHarnessNextAction(runtime: GoalHarnessRuntimeState): Go
       phase: runtime.phase,
       action: 'resolve Codex goal snapshot mismatch before relying on goal-mode status',
       reason: [...codexSnapshot.errors, ...codexSnapshot.warnings].join('; '),
-      recommendedCommand: `omx goal-harness sync-goal --slug ${runtime.slug} --codex-goal-json <fresh-get_goal-json>`,
+      recommendedCommand: `omg sync-goal --slug ${runtime.slug} --codex-goal-json <fresh-get_goal-json>`,
     };
   }
   if (runtime.phase === 'late' && runtime.lastCompletionGate?.allowed) {
@@ -649,7 +653,7 @@ export function buildGoalHarnessNextAction(runtime: GoalHarnessRuntimeState): Go
       phase: runtime.phase,
       action: 'local completion validation passed; leader may call update_goal, then record a fresh get_goal snapshot',
       reason: `completion gate passed at ${runtime.lastCompletionGate.artifactPath}`,
-      recommendedCommand: `omx goal-harness complete --slug ${runtime.slug} --codex-goal-json <fresh-complete-get_goal-json>`,
+      recommendedCommand: `omg complete --slug ${runtime.slug} --codex-goal-json <fresh-complete-get_goal-json>`,
     };
   }
   if (runtime.phase === 'late' && runtime.lastCompletionGate && !runtime.lastCompletionGate.allowed) {
@@ -657,7 +661,7 @@ export function buildGoalHarnessNextAction(runtime: GoalHarnessRuntimeState): Go
       phase: runtime.phase,
       action: 'resolve failed completion-gate evidence before completing the Codex goal',
       reason: [...runtime.lastCompletionGate.missing, ...runtime.lastCompletionGate.blockers].join('; '),
-      recommendedCommand: `omx goal-harness gate --slug ${runtime.slug} --evidence-json <completion-evidence-json>`,
+      recommendedCommand: `omg gate --slug ${runtime.slug} --evidence-json <completion-evidence-json>`,
     };
   }
   if (runtime.phase === 'early') {
@@ -666,14 +670,14 @@ export function buildGoalHarnessNextAction(runtime: GoalHarnessRuntimeState): Go
         phase: runtime.phase,
         action: 'record another independent trajectory before committing',
         reason: `early exploration has ${runtime.budget.alternativesRecorded}/${runtime.challenge.maxAlternativeStrategies} alternatives`,
-        recommendedCommand: `omx goal-harness record-trajectory --slug ${runtime.slug} --summary "<strategy>" --evidence "<evidence>"`,
+        recommendedCommand: `omg record-trajectory --slug ${runtime.slug} --summary "<strategy>" --evidence "<evidence>"`,
       };
     }
     return {
       phase: runtime.phase,
       action: 'select the best evidenced trajectory and move into exploitation',
       reason: `${candidates.length} candidate trajectories are available`,
-      recommendedCommand: `omx goal-harness select --slug ${runtime.slug} --trajectory-id <id> --evidence "<why this wins>"`,
+      recommendedCommand: `omg select --slug ${runtime.slug} --trajectory-id <id> --evidence "<why this wins>"`,
     };
   }
   if (runtime.phase === 'middle') {
@@ -682,7 +686,7 @@ export function buildGoalHarnessNextAction(runtime: GoalHarnessRuntimeState): Go
         phase: runtime.phase,
         action: 'select an active trajectory before implementation work continues',
         reason: 'middle exploitation requires a leader-selected trajectory',
-        recommendedCommand: `omx goal-harness select --slug ${runtime.slug} --trajectory-id <id> --evidence "<why this wins>"`,
+        recommendedCommand: `omg select --slug ${runtime.slug} --trajectory-id <id> --evidence "<why this wins>"`,
       };
     }
     if (runtime.budget.criticPassesUsed < runtime.challenge.maxCriticPasses) {
@@ -690,14 +694,14 @@ export function buildGoalHarnessNextAction(runtime: GoalHarnessRuntimeState): Go
         phase: runtime.phase,
         action: 'keep exploiting the selected path while adding critic/tester pressure',
         reason: `critic pressure has ${runtime.budget.criticPassesUsed}/${runtime.challenge.maxCriticPasses} recorded passes`,
-        recommendedCommand: `omx goal-harness record-trajectory --slug ${runtime.slug} --source worker --role critic --summary "<critique>" --evidence "<findings>"`,
+        recommendedCommand: `omg record-trajectory --slug ${runtime.slug} --source worker --role critic --summary "<critique>" --evidence "<findings>"`,
       };
     }
     return {
       phase: runtime.phase,
       action: 'advance to late completion challenge after implementation evidence is ready',
       reason: 'selected trajectory has received bounded middle-phase pressure',
-      recommendedCommand: `omx goal-harness advance --slug ${runtime.slug} --phase late --evidence "<implementation evidence ready>"`,
+      recommendedCommand: `omg advance --slug ${runtime.slug} --phase late --evidence "<implementation evidence ready>"`,
     };
   }
   if (runtime.phase === 'stuck') {
@@ -707,7 +711,7 @@ export function buildGoalHarnessNextAction(runtime: GoalHarnessRuntimeState): Go
         phase: runtime.phase,
         action: 'build a stuck-phase perturbation artifact before recording another trajectory',
         reason: runtime.challenge.stopRule,
-        recommendedCommand: `omx goal-harness perturb --slug ${runtime.slug} --blocker "<repeated blocker>"`,
+        recommendedCommand: `omg perturb --slug ${runtime.slug} --blocker "<repeated blocker>"`,
       };
     }
     if (!lastTeamPlan || lastTeamPlan.createdAt < lastPerturbation.createdAt) {
@@ -715,20 +719,20 @@ export function buildGoalHarnessNextAction(runtime: GoalHarnessRuntimeState): Go
         phase: runtime.phase,
         action: 'launch bounded replanner/critic/tester pressure from the perturbation artifact',
         reason: `latest perturbation artifact is ${lastPerturbation.artifactPath}`,
-        recommendedCommand: `omx goal-harness team-plan --slug ${runtime.slug} --task "Run stuck perturbation ${lastPerturbation.id}"`,
+        recommendedCommand: `omg team-plan --slug ${runtime.slug} --task "Run stuck perturbation ${lastPerturbation.id}"`,
       };
     }
     return {
       phase: runtime.phase,
       action: 'import or record replanner/critic/tester evidence from the stuck perturbation lanes',
       reason: `latest perturbation artifact is ${lastPerturbation.artifactPath}`,
-      recommendedCommand: `omx goal-harness import-worker-result --slug ${runtime.slug} --result <lane-result.md>`,
+      recommendedCommand: `omg import-worker-result --slug ${runtime.slug} --result <lane-result.md>`,
     };
   }
   return {
     phase: runtime.phase,
     action: 'run the completion gate with objective audit, verification, adversarial review, and basin-escape evidence',
     reason: runtime.challenge.stopRule,
-    recommendedCommand: `omx goal-harness gate --slug ${runtime.slug} --evidence-json <completion-evidence-json>`,
+    recommendedCommand: `omg gate --slug ${runtime.slug} --evidence-json <completion-evidence-json>`,
   };
 }

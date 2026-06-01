@@ -9,7 +9,7 @@ import {
 } from '../artifacts.js';
 
 async function withTempRepo<T>(run: (cwd: string) => Promise<T>): Promise<T> {
-  const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-'));
+  const cwd = await mkdtemp(join(tmpdir(), 'omg-goal-harness-'));
   try {
     return await run(cwd);
   } finally {
@@ -27,8 +27,8 @@ describe('goal-harness artifacts', () => {
       });
 
       assert.equal(result.run.workflow, 'goal-harness');
-      assert.equal(result.run.artifactDir, '.omx/goals/goal-harness/autonomy-harness');
-      assert.equal(result.missionPath, '.omx/goals/goal-harness/autonomy-harness/mission.md');
+      assert.equal(result.run.artifactDir, '.omg/goals/goal-harness/autonomy-harness');
+      assert.equal(result.missionPath, '.omg/goals/goal-harness/autonomy-harness/mission.md');
       assert.equal(result.annealing.phase, 'early');
       assert.match(result.run.objective, /Complete the user objective/);
 

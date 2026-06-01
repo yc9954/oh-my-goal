@@ -12,7 +12,7 @@ import {
 import { writeGoalHarnessTeamPacket } from '../team-packet.js';
 
 async function withTempRepo<T>(run: (cwd: string) => Promise<T>): Promise<T> {
-  const cwd = await mkdtemp(join(tmpdir(), 'omx-goal-harness-team-packet-'));
+  const cwd = await mkdtemp(join(tmpdir(), 'omg-goal-harness-team-packet-'));
   try {
     return await run(cwd);
   } finally {
@@ -47,8 +47,8 @@ describe('goal-harness team worker packets', () => {
       });
 
       assert.equal(result.packet.planId, plan.plan.id);
-      assert.equal(result.packet.lanes.length, 3);
-      assert.match(result.packet.teamLaunchCommand, /omx team 3:executor/);
+      assert.equal(result.packet.lanes.length, 4);
+      assert.match(result.packet.teamLaunchCommand, /OMG worker lane/);
       assert.match(result.packet.teamLaunchCommand, /manifest\.json/);
 
       const manifest = JSON.parse(await readFile(join(cwd, result.packet.manifestPath), 'utf-8')) as {
@@ -74,9 +74,9 @@ describe('goal-harness team worker packets', () => {
       assert.equal(runtime.teamPlans[0]?.packetManifestPath, result.packet.manifestPath);
       assert.equal(runtime.teamPlans[0]?.packetPath, result.packet.artifactDir);
 
-      const ledger = await readFile(join(cwd, '.omx/goals/goal-harness/packet/ledger.jsonl'), 'utf-8');
+      const ledger = await readFile(join(cwd, '.omg/goals/goal-harness/packet/ledger.jsonl'), 'utf-8');
       assert.match(ledger, /"event":"team_packet_built"/);
-      assert.match(ledger, /"laneCount":3/);
+      assert.match(ledger, /"laneCount":4/);
     });
   });
 });

@@ -4,12 +4,16 @@ import { existsSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   buildIntakeQuestionInput,
   intakeQuestionsForObjective,
   renderQuestionInputMarkdown,
 } from './intake-question-engine.mjs';
+import {
+  buildDesignSystem,
+  formatDesignSystemMarkdown,
+  normalizeDesignSystemMode,
+} from './design-system-runtime.mjs';
 
 const VALUE_FLAGS = new Set(['--objective', '--slug', '--cwd', '--answers-json', '--answers-file']);
 
@@ -70,6 +74,174 @@ function answerValue(answers, key, fallback = 'Unresolved') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
+const CANONICAL_ALIASES = {
+  authProvider: {
+    'clerk authentication': 'clerk',
+    clerk: 'clerk',
+    'nextauth/auth.js': 'nextauth',
+    'nextauth auth.js': 'nextauth',
+    nextauth: 'nextauth',
+    'auth.js': 'nextauth',
+    'supabase auth': 'supabase',
+    supabase: 'supabase',
+    'no authentication': 'no-auth',
+    'no auth': 'no-auth',
+    'no-auth': 'no-auth',
+  },
+  credentialSetup: {
+    'use vercel cli secure prompts': 'secure-terminal-prompt',
+    'secure terminal prompt': 'secure-terminal-prompt',
+    'secure-terminal-prompt': 'secure-terminal-prompt',
+    'already configured in vercel': 'already-configured-vercel-env',
+    'already-configured-vercel-env': 'already-configured-vercel-env',
+    'already configured locally': 'already-configured-local-env',
+    'already-configured-local-env': 'already-configured-local-env',
+    'generate .env.example and stop': 'env-example-and-stop',
+    'generate env.example and stop': 'env-example-and-stop',
+    'env-example-and-stop': 'env-example-and-stop',
+    'no secrets needed': 'no-secrets-needed',
+    'no-secrets-needed': 'no-secrets-needed',
+  },
+  deploymentTarget: {
+    'vercel preview deployment': 'vercel-preview',
+    'vercel preview': 'vercel-preview',
+    'vercel-preview': 'vercel-preview',
+    'vercel production deployment': 'vercel-production',
+    'vercel production': 'vercel-production',
+    'vercel-production': 'vercel-production',
+    'deployment plan only': 'deployment-plan-only',
+    'deployment-plan-only': 'deployment-plan-only',
+    'no deployment': 'no-deployment',
+    'no-deployment': 'no-deployment',
+  },
+  llmApi: {
+    'openai api': 'openai-api',
+    openai: 'openai-api',
+    'openai-api': 'openai-api',
+    'openai-compatible api': 'openai-compatible-api',
+    'openai compatible api': 'openai-compatible-api',
+    'openai-compatible-api': 'openai-compatible-api',
+    'no llm api': 'no-llm-api',
+    'no-llm-api': 'no-llm-api',
+  },
+  stack: {
+    'static html/css/js': 'static',
+    'static html css js': 'static',
+    static: 'static',
+    'react/vite': 'vite',
+    'react vite': 'vite',
+    vite: 'vite',
+    'next.js / react app': 'nextjs',
+    'next.js react app': 'nextjs',
+    'nextjs / react app': 'nextjs',
+    nextjs: 'nextjs',
+    'next.js': 'nextjs',
+    'match existing repo stack': 'auto',
+    auto: 'auto',
+  },
+  designSystemMode: {
+    'generate design-system.md before implementation': 'generate-design-system',
+    'generate design system md before implementation': 'generate-design-system',
+    'generate and enforce a design system': 'generate-design-system',
+    'generate-design-system': 'generate-design-system',
+    'use a lightweight design checklist': 'lightweight-design-checklist',
+    'lightweight design checklist': 'lightweight-design-checklist',
+    'lightweight-design-checklist': 'lightweight-design-checklist',
+    'match the existing design system': 'match-existing-design-system',
+    'match existing design system': 'match-existing-design-system',
+    'match-existing-design-system': 'match-existing-design-system',
+    'skip design system': 'skip-design-system',
+    'skip-design-system': 'skip-design-system',
+  },
+};
+
+function comparable(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[`'"]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9가-힣.+/-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function canonicalAnswerValue(answers, key, fallback = 'Unresolved') {
+  const value = answerValue(answers, key, fallback);
+  const aliases = CANONICAL_ALIASES[key];
+  if (!aliases) return value;
+  const normalized = comparable(value);
+  return aliases[normalized] || value;
+}
+
+function selectedDesignSystemMode(answers) {
+  return normalizeDesignSystemMode(canonicalAnswerValue(answers, 'designSystemMode', 'generate-design-system'));
+}
+
+function objectiveNeedsZep(objective) {
+  return /\b(zep|mirofish|memory)\b/i.test(String(objective || ''));
+}
+
+const NEGATIVE_PROMPT_SIGNAL_RE = /^(?:no|none|skip|without|exclude|excluding)[ -]|^(?:없음|불필요)$/;
+const NEGATED_AUTH_RE = /\b(?:no|without|skip|exclude|excluding)\s+(?:auth|authentication|login)\b|(?:auth|authentication|login)\s+(?:not needed|unneeded)|(?:로그인|인증)\s*(?:없|없이|제외|불필요)/i;
+const NEGATED_DEPLOYMENT_RE = /\b(?:no|without|skip|exclude|excluding)\s+(?:deployment|deploy|vercel)\b|(?:deployment|deploy|vercel)\s+(?:not needed|unneeded)|배포\s*(?:없|없이|하지 않|제외|불필요)/i;
+const NEGATED_LLM_RE = /\b(?:no|without|skip|exclude|excluding)\s+(?:llm|openai|gpt|ai api|api key)\b|(?:llm|openai|gpt|api key)\s+(?:not needed|unneeded)|(?:llm|openai|gpt|api\s*key|api키)\s*(?:없|없이|제외|불필요)/i;
+const NEGATED_ZEP_RE = /\b(?:no|without|skip|exclude|excluding)\s+(?:zep|memory)\b|(?:zep|memory)\s+(?:not needed|unneeded)|(?:zep|memory|메모리)\s*(?:없|없이|제외|불필요)/i;
+const AUTH_RE = /\b(?:auth|authentication|login|clerk|nextauth|supabase)\b|로그인|인증/i;
+const DEPLOYMENT_RE = /\bvercel\b|배포/i;
+const GITHUB_RE = /\bgithub\b|git hub|new repo|레포|저장소|push/i;
+const LLM_RE = /\b(?:openai|llm|gpt|chatgpt)\b|api key|api키/i;
+const ZEP_RE = /\bzep\b/i;
+const MARKET_RESEARCH_RE = /market research|시장조사|시장 조사|survey|설문|persona|페르소나|시장 반응|소비자|응답|신뢰도|불확실성|synthetic/i;
+const WEB_APP_RE = /\b(?:web|app|dashboard|platform|vercel)\b|웹|앱|사이트|플랫폼/i;
+const MVP_RE = /\b(?:mvp|minimum viable|local mvp)\b|로컬 mvp/i;
+const SERVER_SIDE_RE = /server-side|server side|서버 사이드|api route|serverless/i;
+const KOREAN_RE = /한국|korean|\bkr\b/i;
+const PLANNING_RE = /\b(?:prd|spec|requirements)\b|요구사항|기획/i;
+
+function hasPositiveSignal(text, includePattern, excludePattern) {
+  return includePattern.test(text) && !(excludePattern && excludePattern.test(text));
+}
+
+function contributesToPromptSignals(answers, key, value) {
+  const canonical = canonicalAnswerValue(answers, key, '');
+  const normalized = comparable(canonical || value);
+  return Boolean(normalized)
+    && !NEGATIVE_PROMPT_SIGNAL_RE.test(normalized)
+    && !normalized.includes('no deployment')
+    && !normalized.includes('no secrets')
+    && !normalized.includes('필요 없음')
+    && !normalized.includes('제외');
+}
+
+function envRequirementsFromAnswers(answers, objective = '') {
+  const llm = canonicalAnswerValue(answers, 'llmApi', 'no-llm-api');
+  const auth = canonicalAnswerValue(answers, 'authProvider', 'no-auth');
+  const vars = [];
+  if (llm === 'openai-api') vars.push(['OPENAI_API_KEY', 'server-only OpenAI API key.']);
+  if (llm === 'openai-compatible-api') {
+    vars.push(['OPENAI_API_KEY', 'server-only provider API key.']);
+    vars.push(['OPENAI_BASE_URL', 'provider base URL.']);
+  }
+  if (objectiveNeedsZep(objective)) {
+    vars.push(['ZEP_API_KEY', 'server-only Zep memory API key.']);
+  }
+  if (auth === 'clerk') {
+    vars.push(['NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'public Clerk key.']);
+    vars.push(['CLERK_SECRET_KEY', 'server-only Clerk secret.']);
+  }
+  if (auth === 'nextauth') {
+    vars.push(['AUTH_SECRET', 'Auth.js/NextAuth secret.']);
+    vars.push(['AUTH_URL', 'deployed auth callback base URL.']);
+  }
+  if (auth === 'supabase') {
+    vars.push(['NEXT_PUBLIC_SUPABASE_URL', 'public Supabase URL.']);
+    vars.push(['NEXT_PUBLIC_SUPABASE_ANON_KEY', 'public Supabase anon key.']);
+    vars.push(['SUPABASE_SERVICE_ROLE_KEY', 'server-only Supabase service role key if needed.']);
+  }
+  return vars;
+}
+
 function formatQuestion({ question, options }) {
   if (!options?.length) return `${question} `;
   return lines([
@@ -111,57 +283,222 @@ function shellQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
-function teamRuntimeScriptPath() {
-  return join(fileURLToPath(new URL('.', import.meta.url)), 'team-runtime.mjs');
+function pluginRootResolverPath(slug) {
+  return `.omg/harness/${slug}/plugin-root-resolver.mjs`;
 }
 
-function pressureRuntimeScriptPath() {
-  return join(fileURLToPath(new URL('.', import.meta.url)), 'pressure-runtime.mjs');
+function objectiveFilePath(slug) {
+  return `.omg/harness/${slug}/objective.txt`;
 }
 
-function teamRuntimeCommand({ objective, slug }) {
+function objectiveFileShellArg(slug) {
+  return `"$(cat ${shellQuote(objectiveFilePath(slug))})"`;
+}
+
+function pluginScriptCommand({ slug, script, args = [] }) {
   return [
+    `OMG_PLUGIN_ROOT="$(node ${shellQuote(pluginRootResolverPath(slug))})"`,
+    '&&',
     'node',
-    shellQuote(teamRuntimeScriptPath()),
-    'launch',
-    '--objective',
-    shellQuote(objective),
-    '--team',
-    shellQuote(slug),
-    '--workers',
-    '3',
-    '--mode',
-    'auto',
-    '--json',
+    `"$OMG_PLUGIN_ROOT/scripts/${script}"`,
+    ...args,
   ].join(' ');
+}
+
+function pluginRootResolverSource() {
+  return lines([
+    '#!/usr/bin/env node',
+    "import { existsSync, readdirSync, statSync } from 'node:fs';",
+    "import { createRequire } from 'node:module';",
+    "import { dirname, join, resolve } from 'node:path';",
+    "import { fileURLToPath } from 'node:url';",
+    '',
+    'const here = dirname(fileURLToPath(import.meta.url));',
+    'const cwd = process.cwd();',
+    'const require = createRequire(import.meta.url);',
+    '',
+    'function validRoot(root) {',
+    '  if (!root) return false;',
+    '  const resolved = resolve(root);',
+    "  return existsSync(join(resolved, 'scripts', 'create-harness.mjs'))",
+    "    && existsSync(join(resolved, 'scripts', 'team-runtime.mjs'))",
+    "    && (existsSync(join(resolved, '.codex-plugin', 'plugin.json')) || existsSync(join(resolved, 'skills', 'oh-my-goal', 'SKILL.md')));",
+    '}',
+    '',
+    'function addCandidate(candidates, root) {',
+    '  if (!root) return;',
+    '  const resolved = resolve(root);',
+    '  if (!candidates.includes(resolved)) candidates.push(resolved);',
+    '}',
+    '',
+    'function ancestors(start) {',
+    '  const result = [];',
+    '  let current = resolve(start);',
+    '  while (true) {',
+    '    result.push(current);',
+    '    const parent = dirname(current);',
+    '    if (parent === current) break;',
+    '    current = parent;',
+    '  }',
+    '  return result;',
+    '}',
+    '',
+    'function scanForPluginRoots(candidates, root, depth) {',
+    '  if (!root || depth < 0 || !existsSync(root)) return;',
+    '  if (validRoot(root)) addCandidate(candidates, root);',
+    '  let entries = [];',
+    '  try {',
+    '    entries = readdirSync(root).sort().reverse();',
+    '  } catch {',
+    '    return;',
+    '  }',
+    '  for (const entry of entries) {',
+    '    const path = join(root, entry);',
+    '    try {',
+    '      if (!statSync(path).isDirectory()) continue;',
+    '    } catch {',
+    '      continue;',
+    '    }',
+    '    scanForPluginRoots(candidates, path, depth - 1);',
+    '  }',
+    '}',
+    '',
+    'const candidates = [];',
+    'addCandidate(candidates, process.env.OH_MY_GOAL_PLUGIN_ROOT);',
+    '',
+    'for (const base of [cwd, here]) {',
+    '  for (const dir of ancestors(base)) {',
+    '    addCandidate(candidates, dir);',
+    "    addCandidate(candidates, join(dir, 'plugins', 'oh-my-goal'));",
+    "    addCandidate(candidates, join(dir, 'node_modules', 'oh-my-goal', 'plugins', 'oh-my-goal'));",
+    '  }',
+    '}',
+    '',
+    'try {',
+    "  const packageJson = require.resolve('oh-my-goal/package.json', { paths: [cwd, here] });",
+    "  addCandidate(candidates, join(dirname(packageJson), 'plugins', 'oh-my-goal'));",
+    '} catch {',
+    '  // The plugin is often installed through Codex instead of node_modules.',
+    '}',
+    '',
+    'const home = process.env.HOME || process.env.USERPROFILE || "";',
+    "const codexHome = process.env.CODEX_HOME || (home ? join(home, '.codex') : '');",
+    "scanForPluginRoots(candidates, join(codexHome, 'plugins', 'cache'), 5);",
+    '',
+    'for (const candidate of candidates) {',
+    '  if (validRoot(candidate)) {',
+    '    console.log(resolve(candidate));',
+    '    process.exit(0);',
+    '  }',
+    '}',
+    '',
+    "console.error('Could not resolve the Oh My Goal plugin root. Set OH_MY_GOAL_PLUGIN_ROOT to the directory containing scripts/create-harness.mjs.');",
+    'process.exit(2);',
+  ]);
+}
+
+function teamRuntimeCommand({ objective, slug, requireInteractive = false, mode = 'auto' }) {
+  return pluginScriptCommand({
+    slug,
+    script: 'team-runtime.mjs',
+    args: [
+      'launch',
+      '--objective',
+      objectiveFileShellArg(slug),
+      '--team',
+      shellQuote(slug),
+      '--workers',
+      '3',
+      '--mode',
+      mode,
+      ...(requireInteractive ? ['--require-interactive'] : []),
+      '--json',
+    ],
+  });
 }
 
 function pressureRuntimeInitCommand({ objective, slug, route }) {
-  return [
-    'node',
-    shellQuote(pressureRuntimeScriptPath()),
-    'init',
-    '--objective',
-    shellQuote(objective),
-    '--slug',
-    shellQuote(slug),
-    '--route',
-    shellQuote(route),
-    '--json',
-  ].join(' ');
+  return pluginScriptCommand({
+    slug,
+    script: 'pressure-runtime.mjs',
+    args: [
+      'init',
+      '--objective',
+      objectiveFileShellArg(slug),
+      '--slug',
+      shellQuote(slug),
+      '--route',
+      shellQuote(route),
+      '--json',
+    ],
+  });
 }
 
 function pressureRuntimeGateCommand({ slug }) {
-  return [
-    'node',
-    shellQuote(pressureRuntimeScriptPath()),
-    'gate',
-    '--slug',
-    shellQuote(slug),
-    '--evidence-json',
-    '<completion-evidence-json-or-path>',
-    '--json',
-  ].join(' ');
+  return pluginScriptCommand({
+    slug,
+    script: 'pressure-runtime.mjs',
+    args: [
+      'gate',
+      '--slug',
+      shellQuote(slug),
+      '--evidence-json',
+      '<completion-evidence-json-or-path>',
+      '--json',
+    ],
+  });
+}
+
+function designSystemCommand({ objective, slug, answers }) {
+  const mode = selectedDesignSystemMode(answers);
+  return pluginScriptCommand({
+    slug,
+    script: 'design-system-runtime.mjs',
+    args: [
+      '--objective',
+      objectiveFileShellArg(slug),
+      '--slug',
+      shellQuote(slug),
+      '--stack',
+      shellQuote(answerValue(answers, 'stack', 'auto')),
+      '--mode',
+      shellQuote(mode),
+      '--persist',
+      '--json',
+    ],
+  });
+}
+
+function deploymentRuntimeCommand({ objective, slug, answers, command = 'plan', execute = false, credentialSetup }) {
+  return pluginScriptCommand({
+    slug,
+    script: 'deployment-runtime.mjs',
+    args: [
+      command,
+      '--objective',
+      objectiveFileShellArg(slug),
+      '--slug',
+      shellQuote(slug),
+      '--target',
+      shellQuote(canonicalAnswerValue(answers, 'deploymentTarget', 'deployment-plan-only')),
+      '--llm',
+      shellQuote(canonicalAnswerValue(answers, 'llmApi', 'no-llm-api')),
+      '--auth',
+      shellQuote(canonicalAnswerValue(answers, 'authProvider', 'no-auth')),
+      '--framework',
+      shellQuote(canonicalAnswerValue(answers, 'stack', 'auto')),
+      '--credential-setup',
+      shellQuote(credentialSetup || canonicalAnswerValue(answers, 'credentialSetup', 'secure-terminal-prompt')),
+      ...(execute ? ['--execute'] : []),
+      '--json',
+    ],
+  });
+}
+
+function postSecretCredentialSetup(answers) {
+  const selected = canonicalAnswerValue(answers, 'credentialSetup', 'secure-terminal-prompt');
+  if (selected === 'secure-terminal-prompt') return 'already-configured-vercel-env';
+  return selected;
 }
 
 function ambiguityRows(objective, answers) {
@@ -177,6 +514,96 @@ function ambiguityRows(objective, answers) {
     ['scope boundary', answerValue(answers, 'nonGoals', 'Needs explicit non-goals'), 'high', 'Prevent useful-looking expansion.'],
     ['verification', answerValue(answers, 'verification', 'Needs command or inspectable artifact'), 'high', 'Run or record the verification path.'],
   ];
+}
+
+function designIntegrationLines(mode) {
+  if (mode === 'skip-design-system') {
+    return [
+      '## Integration With Oh My Goal',
+      '- Design-system generation was explicitly skipped in intake.',
+      '- The designer lane should enforce only the minimal UI safety gate in this file.',
+      '- The implementer lane should preserve existing UI conventions and avoid broad styling work.',
+      '- The tester lane should still reject text overlap, mobile overflow, broken focus states, and unreadable contrast.',
+    ];
+  }
+  if (mode === 'lightweight-design-checklist') {
+    return [
+      '## Integration With Oh My Goal',
+      '- The designer lane owns the lightweight checklist, not a full token system.',
+      '- The implementer lane should use existing repo styles unless the checklist exposes a concrete gap.',
+      '- The tester lane must verify responsive breakpoints, contrast, focus states, and text overflow.',
+      '- The critic lane must reject speculative polish that was not kept in `pruning-matrix.md`.',
+    ];
+  }
+  if (mode === 'match-existing-design-system') {
+    return [
+      '## Integration With Oh My Goal',
+      '- The designer lane must inspect existing repo tokens, CSS variables, components, spacing, typography, and icons before adding anything new.',
+      '- The implementer lane must map UI files/components back to existing conventions first, then to the fallback guidance in this file only when gaps remain.',
+      '- The tester lane must verify responsive breakpoints, contrast, focus states, and text overflow.',
+      '- The critic lane must reject UI that conflicts with established repository design patterns.',
+    ];
+  }
+  return [
+    '## Integration With Oh My Goal',
+    '- The designer lane owns first-pass interpretation of this file.',
+    '- The implementer lane must map UI files/components back to this file.',
+    '- The tester lane must verify responsive breakpoints, contrast, focus states, and text overflow.',
+    '- The critic lane must reject decorative UI that violates the selected design system or expands scope.',
+  ];
+}
+
+function designRuntimeSection(mode, slug, designCommand) {
+  if (mode === 'skip-design-system') {
+    return [
+      '## Design-System Runtime',
+      '',
+      'Skipped by intake. Do not auto-start a design-system generator for this harness unless the user changes the design-system mode.',
+      '',
+      'Use `design-system.md` only as the explicit skip record and minimal UI safety gate.',
+    ];
+  }
+  if (mode === 'lightweight-design-checklist') {
+    return [
+      '## Design-System Runtime',
+      '',
+      'A lightweight checklist was already written to `design-system.md`. Do not auto-start the full design-system runtime unless UI quality becomes a material blocker or the user approves a deeper design pass.',
+      '',
+      'Optional refresh command if the leader needs a persisted lightweight copy:',
+      '',
+      '```sh',
+      designCommand,
+      '```',
+    ];
+  }
+  const intro = mode === 'match-existing-design-system'
+    ? 'Run this before UI implementation after inspecting existing repo UI conventions. It persists `.omg/design-systems/' + slug + '/MASTER.md` with repository-first alignment plus fallback guidance.'
+    : 'Run this before UI implementation. It persists `.omg/design-systems/' + slug + '/MASTER.md` and keeps website/app design choices explicit.';
+  return [
+    '## Design-System Runtime Auto-Start',
+    '',
+    intro,
+    '',
+    '```sh',
+    designCommand,
+    '```',
+    '',
+    'Use `design-system.md` as the harness-local copy and `.omg/design-systems/' + slug + '/MASTER.md` as durable runtime state.',
+  ];
+}
+
+function designHarnessStep(mode) {
+  if (mode === 'skip-design-system') return '6. Design-system mode is `skip-design-system`; follow the minimal UI safety gate in `design-system.md` without generating a full visual system.';
+  if (mode === 'lightweight-design-checklist') return '6. Design-system mode is `lightweight-design-checklist`; apply the compact UI checklist in `design-system.md` before UI implementation.';
+  if (mode === 'match-existing-design-system') return '6. Design-system mode is `match-existing-design-system`; inspect existing repo conventions first, then use `design-system.md` only to fill gaps.';
+  return '6. Generate or refresh `design-system.md` before UI implementation.';
+}
+
+function designCompletionEvidence(mode) {
+  if (mode === 'skip-design-system') return { status: 'skipped', evidence: 'design-system.md records skip decision and minimal UI safety checks were considered' };
+  if (mode === 'lightweight-design-checklist') return { status: 'passed', evidence: 'lightweight design checklist applied and responsive/a11y checks recorded' };
+  if (mode === 'match-existing-design-system') return { status: 'passed', evidence: 'existing repo design conventions were inspected and applied; fallback guidance used only for gaps' };
+  return { status: 'passed', evidence: 'design-system.md applied and responsive/a11y checks recorded' };
 }
 
 async function askMissing(objective, answers) {
@@ -226,60 +653,148 @@ function answersArrayToObject(answers) {
   return normalized;
 }
 
+function complexTeamSignalText(objective, answers) {
+  return `${objective}\n${Object.values(answers).join('\n')}`.toLowerCase();
+}
+
+function hasComplexProductShape(text) {
+  const bulletCount = text.split(/\r?\n/).filter((line) => /^\s*(?:[-*•]|\d+[.)]|단계\s*\d+)/i.test(line)).length;
+  const stageCount = (text.match(/단계\s*\d+|step\s*\d+|산출물|데이터 모델|구현 지시|adapter|resolver|service|graph|api route|serverless|vercel|테스트|검증|배포/gi) || []).length;
+  return bulletCount >= 8 || stageCount >= 6;
+}
+
 function routeFor(objective, answers) {
-  const text = `${objective} ${Object.values(answers).join(' ')}`.toLowerCase();
-  if (/(agent|worker|team|parallel|orchestrat|multi)/.test(text)) return 'agent_orchestrated';
+  const text = complexTeamSignalText(objective, answers);
+  if (/(agent|worker|team|parallel|orchestrat|multi|subagent|swarm|mirofish|oasis|에이전트|멀티|병렬|오케스트|팀|워커|시뮬레이션)/.test(text)) return 'agent_orchestrated';
+  if (hasComplexProductShape(text)) return 'agent_orchestrated';
   if (/(long|persistent|loop|resume|goal|harness|autonom)/.test(text)) return 'persistent_goal_loop';
   return 'goal_first';
 }
 
+function outputModeDefersImplementation(answers) {
+  const text = comparable([
+    answerValue(answers, 'outputMode', ''),
+    answerValue(answers, 'handoffTarget', ''),
+    answerValue(answers, 'deliverableScope', ''),
+    answerValue(answers, 'nonGoals', ''),
+  ].join(' '));
+  return /harness only|harness-only|goal prompt only|goal-prompt-only|prd only|prd-only|spec first|spec-first|no implementation|no-implementation|문서 먼저|하네스만|구현하지 않|구현 금지/.test(text);
+}
+
+function explicitlyDisablesTeam(answers) {
+  const text = comparable([
+    answerValue(answers, 'workerLanes', ''),
+    answerValue(answers, 'localOptimum', ''),
+  ].join(' '));
+  return /leader only|leader-only|single session|single-session|sequential only|sequential-only|skip workers|no workers|no-workers|skip team|no team|팀 없음|워커 없음|단일 세션/.test(text);
+}
+
+function hasImplementationSignal(objective, answers) {
+  const text = comparable(complexTeamSignalText(objective, answers));
+  const implementationKeys = ['stack', 'ux', 'outputMode', 'edgeCases', 'dataPersistence', 'visualPolishLevel'];
+  return implementationKeys.some((key) => typeof answers[key] === 'string' && answers[key].trim())
+    || /(implement|build|make|create|ship|fix|code|website|web app|frontend|ui|app|tool|dashboard|calculator|구현|개발|만들|웹|앱|사이트|도구|계산기)/i.test(text);
+}
+
+function requiresVisibleTeam(objective, answers, route) {
+  if (explicitlyDisablesTeam(answers)) return false;
+  if (outputModeDefersImplementation(answers)) return false;
+  const text = complexTeamSignalText(objective, answers);
+  return hasImplementationSignal(objective, answers)
+    || route === 'agent_orchestrated'
+    || hasComplexProductShape(text)
+    || /(multi-agent|multi agent|subagent|worker lanes|parallel|swarm|mirofish|oasis|멀티에이전트|멀티 에이전트|병렬|팀 세션|워커)/i.test(text);
+}
+
+function promptSignalText(objective, answers) {
+  const values = Object.entries(answers).flatMap(([key, value]) => {
+    if (!contributesToPromptSignals(answers, key, value)) return [];
+    return [String(value || '')];
+  });
+  return `${objective} ${values.join(' ')}`.toLowerCase();
+}
+
+function promptSignals(objective, answers) {
+  const text = promptSignalText(objective, answers);
+  const deploymentTarget = canonicalAnswerValue(answers, 'deploymentTarget', 'deployment-plan-only');
+  const llmApi = canonicalAnswerValue(answers, 'llmApi', 'no-llm-api');
+  const authProvider = canonicalAnswerValue(answers, 'authProvider', 'no-auth');
+  const zepRequested = objectiveNeedsZep(objective) || hasPositiveSignal(text, ZEP_RE, NEGATED_ZEP_RE);
+  return {
+    text,
+    vercel: deploymentTarget.includes('vercel') || hasPositiveSignal(text, DEPLOYMENT_RE, NEGATED_DEPLOYMENT_RE),
+    github: GITHUB_RE.test(text),
+    llm: llmApi !== 'no-llm-api' || hasPositiveSignal(text, LLM_RE, NEGATED_LLM_RE),
+    auth: authProvider !== 'no-auth' || hasPositiveSignal(text, AUTH_RE, NEGATED_AUTH_RE),
+    zep: zepRequested && !NEGATED_ZEP_RE.test(text),
+    marketResearch: MARKET_RESEARCH_RE.test(text),
+    webApp: WEB_APP_RE.test(text),
+    mvp: MVP_RE.test(text),
+    serverSide: SERVER_SIDE_RE.test(text),
+  };
+}
+
+function promptTargetOutcome(objective, answers, signals = promptSignals(objective, answers)) {
+  const scope = comparable(answerValue(answers, 'deliverableScope', ''));
+  if (signals.marketResearch && signals.webApp) {
+    const locale = KOREAN_RE.test(signals.text) ? 'Korean ' : '';
+    const deployment = signals.vercel ? 'Vercel-deployable ' : '';
+    const depth = signals.mvp || /minimal|mvp/.test(scope) ? 'MVP' : 'product slice';
+    return `Target outcome: ${deployment}${depth} of the ${locale}AI-first market-research simulation platform.`;
+  }
+  if (signals.vercel && signals.webApp) return 'Target outcome: Vercel-deployable web MVP unless execution-spec.md narrows scope.';
+  if (PLANNING_RE.test(signals.text)) return 'Target outcome: goal-ready planning artifacts and a completion-auditable handoff.';
+  return 'Target outcome: satisfy execution-spec.md exactly; avoid broadening scope.';
+}
+
+function promptConstraintLines(objective, answers) {
+  const signals = promptSignals(objective, answers);
+  const constraints = [promptTargetOutcome(objective, answers, signals)];
+  if (signals.llm || signals.auth || signals.zep || signals.serverSide) {
+    const services = [
+      signals.llm ? 'OpenAI/LLM' : undefined,
+      signals.auth ? 'auth' : undefined,
+      signals.zep ? 'Zep' : undefined,
+    ].filter(Boolean).join(', ');
+    constraints.push(`Keep ${services || 'external API'} calls server-side only; never expose raw secrets.`);
+  }
+  if (signals.zep) constraints.push('Use only ZEP_API_KEY for Zep; show sync failed in UI/report instead of ignoring memory errors.');
+  if (signals.github || signals.vercel || signals.llm || signals.auth || signals.zep) {
+    const gates = [
+      signals.github ? 'GitHub' : undefined,
+      signals.vercel ? 'Vercel' : undefined,
+      signals.llm ? 'OpenAI/LLM' : undefined,
+      signals.auth ? 'auth' : undefined,
+      signals.zep ? 'Zep' : undefined,
+    ].filter(Boolean).join('/');
+    constraints.push(`${gates} credentials/URLs count only after real operations succeed; otherwise record explicit blockers.`);
+  }
+  if (signals.marketResearch) {
+    constraints.push('Generate survey items from objective/problem signals only; never mix demo, calculator, or dummy questions into real questionnaires.');
+    constraints.push('Report individual-vs-swarm comparison as synthetic stability/confidence, not factual market truth.');
+  }
+  return constraints.slice(0, 6);
+}
+
 function goalPrompt({ objective, slug, route, answers }) {
-  const autoTeamCommand = teamRuntimeCommand({ objective, slug });
-  const pressureInitCommand = pressureRuntimeInitCommand({ objective, slug, route });
-  const pressureGateCommand = pressureRuntimeGateCommand({ slug });
+  const teamRequired = requiresVisibleTeam(objective, answers, route);
   return lines([
-    `Complete the user objective: ${objective}`,
+    `Complete the Oh My Goal harness objective in .omg/harness/${slug}/.`,
     '',
-    `Use the Oh My Goal harness artifacts in .omg/harness/${slug}/ as the execution contract.`,
-    `Read .omg/harness/${slug}/runtime-commands.md before execution.`,
-    `Read .omg/harness/${slug}/quality-frontier.md, .omg/harness/${slug}/pruning-matrix.md, and .omg/harness/${slug}/selected-strategy.md before selecting an implementation path.`,
+    `Full request: .omg/harness/${slug}/objective.txt. One Codex goal; harness files are authoritative.`,
     '',
-    'Acceptance criteria:',
-    answers.acceptance || '- Confirm concrete deliverables with the user before implementation.',
+    'Read before work: context-index.md, execution-spec.md, runtime-commands.md, completion-gate.md.',
     '',
-    'Non-goals and boundaries:',
-    answers.nonGoals || '- Do not expand scope without explicit user approval.',
+    'Execution focus:',
+    ...promptConstraintLines(objective, answers).map((constraint) => `- ${constraint}`),
+    teamRequired
+      ? '- Startup: run pressure + Team Auto-Start first; require "launched". If blocked, report cmux/tmux; no leader-only fallback.'
+      : '- Use Team Auto-Start when worker lanes improve evidence; otherwise record why leader-only is sufficient.',
     '',
-    'Verification:',
-    answers.verification || '- Identify and run the appropriate repository-specific checks before completion.',
+    'Before implementation, follow quality pruning, design, secret/auth, deployment, orchestration, and pressure-gate instructions.',
+    'Only the leader may call update_goal({status: "complete"}) after the harness completion gate and pressure gate pass.',
     '',
-    'Interview choices and assumptions:',
-    `- Deliverable scope: ${answerValue(answers, 'deliverableScope', 'infer from objective')}`,
-    `- Primary reader: ${answerValue(answers, 'audience', 'builder/PM')}`,
-    `- Source context: ${answerValue(answers, 'sourceContext', 'repo plus user answers')}`,
-    '',
-    'Execution policy:',
-    '- Keep one Codex goal as the single top-level objective.',
-    '- Treat trailing text after `$oh-my-goal` as the objective; do not ask for it again.',
-    '- Start with the ambiguity map and deep-interview artifacts; preserve unresolved assumptions.',
-    '- Then run the quality frontier and pruning stage: compare multiple quality-improvement candidates, prune weak or scope-expanding candidates, and bind surviving candidates to worker lanes.',
-    '- Do not equate quality with passing tests only; quality evidence may include UX ergonomics, maintainability, reliability, verification strength, and future-change cost.',
-    '- Do not ask the user to run Team runtime manually.',
-    '- Before selecting or implementing a path, automatically initialize the pressure runtime.',
-    `- Pressure init command: ${pressureInitCommand}`,
-    '- Record evidence-backed baseline, novelty, critic/tester, and replanner trajectories in `.omg/runtime/pressure/<slug>/state.json`.',
-    '- Before implementation, automatically run the Team runtime auto-start command below when independent evidence lanes improve quality, the route is agent_orchestrated, or the work benefits from architect/tester/critic separation.',
-    `- Auto-start command: ${autoTeamCommand}`,
-    '- If the command returns `tmux_not_attached`, `cmux_unavailable`, or another planned-state response, continue from the generated `.omg/runtime/team/<team>/` worker packets sequentially.',
-    '- Select a trajectory only after comparing at least two materially different paths.',
-    '- The selected trajectory must explain how it uses the pruned quality strategy and why rejected quality candidates were not pursued.',
-    '- Use worker lanes only for evidence-producing research, implementation, testing, critique, or replanning.',
-    '- Workers must not call create_goal, update_goal, or mark the mission complete.',
-    '- Apply the pressure runtime before major commitments and before completion; do not rely only on prose notes.',
-    `- Pressure gate command before completion: ${pressureGateCommand}`,
-    '- Only the leader may call update_goal({status: "complete"}) after the completion gate passes.',
-    '',
-    `Recommended harness route: ${route}`,
+    `Harness route: ${route}`,
   ]);
 }
 
@@ -309,6 +824,7 @@ function executionSpec({ objective, slug, route, answers }) {
     '',
     '## UX And Interface Requirements',
     '- UX direction: ' + specSectionValue(answers, 'ux', 'Use the repository/product default.'),
+    '- Design-system mode: ' + selectedDesignSystemMode(answers),
     '- Visual polish level: ' + specSectionValue(answers, 'visualPolishLevel', 'Polished enough for the selected scope; avoid unrelated decorative work.'),
     '- Accessibility and edge cases: ' + specSectionValue(answers, 'edgeCases', 'Cover core happy path, obvious invalid input, and responsive behavior when relevant.'),
     '- Quality frontier: ' + answerList(answers, 'qualityFrontier', ['User-visible quality, reliability, maintainability, and verification strength.']).join('; '),
@@ -319,6 +835,16 @@ function executionSpec({ objective, slug, route, answers }) {
     '- Stack: ' + specSectionValue(answers, 'stack', 'Match existing repository stack unless the user approved a new scaffold.'),
     '- Dependency policy: ' + specSectionValue(answers, 'dependencyPolicy', 'Do not add dependencies without evidence that they reduce risk or complexity.'),
     '- State and persistence: ' + specSectionValue(answers, 'dataPersistence', 'Do not add persistence unless the objective or intake requires it.'),
+    '- LLM API: ' + specSectionValue(answers, 'llmApi', 'No LLM API unless explicitly selected.'),
+    '- Auth provider: ' + specSectionValue(answers, 'authProvider', 'No auth unless explicitly selected.'),
+    '- Secret handling: ' + specSectionValue(answers, 'secretHandling', 'Use secure env prompts or placeholders; never commit real secrets.'),
+    '- Credential setup: ' + specSectionValue(answers, 'credentialSetup', 'Use secure terminal prompts or preconfigured environment variables; never paste raw secrets into chat.'),
+    '',
+    '## Deployment Constraints',
+    '- Deployment target: ' + specSectionValue(answers, 'deploymentTarget', 'Deployment plan only unless Vercel was selected.'),
+    '- Vercel evidence: deployment URL, inspected build output, and env-var configuration proof without exposing secret values.',
+    '- OpenAI/API evidence: server-side env var name, route boundary, and a smoke path that proves client code does not contain secret values.',
+    '- Auth evidence: provider configuration, protected route or auth smoke check, and callback URL handling when deployment is enabled.',
     '',
     '## Non-Goals',
     specSectionValue(answers, 'nonGoals', 'No unrelated refactors, broad rewrites, external releases, or scope expansion without approval.'),
@@ -343,13 +869,52 @@ function executionSpec({ objective, slug, route, answers }) {
 
 function artifactMap({ objective, slug, route, answers }) {
   const prompt = goalPrompt({ objective, slug, route, answers });
-  const autoTeamCommand = teamRuntimeCommand({ objective, slug });
+  const designSystemMode = selectedDesignSystemMode(answers);
+  const teamRequired = requiresVisibleTeam(objective, answers, route);
+  const autoTeamCommand = teamRuntimeCommand({ objective, slug, requireInteractive: teamRequired });
+  const plannedTeamCommand = teamRuntimeCommand({ objective, slug, mode: 'dry-run' });
   const pressureInitCommand = pressureRuntimeInitCommand({ objective, slug, route });
   const pressureGateCommand = pressureRuntimeGateCommand({ slug });
-  const pressureStatusCommand = `node ${shellQuote(pressureRuntimeScriptPath())} status --slug ${shellQuote(slug)} --json`;
-  const pressureTeamCommand = `node ${shellQuote(pressureRuntimeScriptPath())} team-command --slug ${shellQuote(slug)} --json`;
-  const pressureImportTeamCommand = `node ${shellQuote(pressureRuntimeScriptPath())} import-team --slug ${shellQuote(slug)} --team ${shellQuote(slug)} --json`;
+  const designCommand = designSystemCommand({ objective, slug, answers });
+  const deploymentCommand = deploymentRuntimeCommand({ objective, slug, answers });
+  const deploymentCheckCommand = deploymentRuntimeCommand({ objective, slug, answers, command: 'check' });
+  const deploymentSetupEnvCommand = deploymentRuntimeCommand({ objective, slug, answers, command: 'setup-env' });
+  const deploymentSetupEnvExecuteCommand = deploymentRuntimeCommand({ objective, slug, answers, command: 'setup-env', execute: true });
+  const deploymentDeployCommand = deploymentRuntimeCommand({ objective, slug, answers, command: 'deploy' });
+  const deploymentPostSecretCheckCommand = deploymentRuntimeCommand({ objective, slug, answers, command: 'check', execute: true, credentialSetup: postSecretCredentialSetup(answers) });
+  const deploymentPostSecretExecuteCommand = deploymentRuntimeCommand({ objective, slug, answers, command: 'deploy', execute: true, credentialSetup: postSecretCredentialSetup(answers) });
+  const designSystem = buildDesignSystem({
+    objective,
+    projectName: slug,
+    stack: answerValue(answers, 'stack', 'auto'),
+    mode: designSystemMode,
+  });
+  const designSystemMarkdown = formatDesignSystemMarkdown(designSystem);
+  const pressureStatusCommand = pluginScriptCommand({ slug, script: 'pressure-runtime.mjs', args: ['status', '--slug', shellQuote(slug), '--json'] });
+  const pressureTeamCommand = pluginScriptCommand({ slug, script: 'pressure-runtime.mjs', args: ['team-command', '--slug', shellQuote(slug), '--json'] });
+  const pressureRecordBaselineCommand = pluginScriptCommand({
+    slug,
+    script: 'pressure-runtime.mjs',
+    args: ['record', '--slug', shellQuote(slug), '--id', 'T001-baseline', '--summary', '"<baseline path>"', '--evidence', '"<files/commands/observations>"', '--score', '<0-100>', '--novelty-score', '10', '--json'],
+  });
+  const pressureRecordNoveltyCommand = pluginScriptCommand({
+    slug,
+    script: 'pressure-runtime.mjs',
+    args: ['record', '--slug', shellQuote(slug), '--id', 'T002-novelty', '--source', 'worker', '--role', 'replanner', '--summary', '"<different path>"', '--evidence', '"<files/commands/observations>"', '--score', '<0-100>', '--novelty-score', '70', '--json'],
+  });
+  const pressureSelectCommand = pluginScriptCommand({
+    slug,
+    script: 'pressure-runtime.mjs',
+    args: ['select', '--slug', shellQuote(slug), '--trajectory-id', '<id>', '--evidence', '"<why this path beats alternatives>"', '--json'],
+  });
+  const teamStatusCommand = pluginScriptCommand({ slug, script: 'team-runtime.mjs', args: ['status', '--team', shellQuote(slug), '--json'] });
+  const teamTickCommand = pluginScriptCommand({ slug, script: 'team-runtime.mjs', args: ['tick', '--team', shellQuote(slug), '--pressure-slug', shellQuote(slug), '--close-idle-minutes', '10', '--json'] });
+  const teamWatchCommand = pluginScriptCommand({ slug, script: 'team-runtime.mjs', args: ['watch', '--team', shellQuote(slug), '--pressure-slug', shellQuote(slug), '--interval-ms', '5000', '--stale-minutes', '10', '--close-idle-minutes', '10', '--close-completed', '--notify', '--json'] });
+  const teamCollectCommand = pluginScriptCommand({ slug, script: 'team-runtime.mjs', args: ['collect', '--team', shellQuote(slug), '--json'] });
+  const teamShutdownCommand = pluginScriptCommand({ slug, script: 'team-runtime.mjs', args: ['shutdown', '--team', shellQuote(slug), '--json'] });
+  const pressureImportTeamCommand = pluginScriptCommand({ slug, script: 'pressure-runtime.mjs', args: ['import-team', '--slug', shellQuote(slug), '--team', shellQuote(slug), '--json'] });
   return {
+    'objective.txt': objective,
     'context-index.md': lines([
       `# Oh My Goal Harness: ${slug}`,
       '',
@@ -358,23 +923,28 @@ function artifactMap({ objective, slug, route, answers }) {
       '',
       'Read order for the Codex goal:',
       '1. `goal-prompt.md`',
-      '2. `ambiguity-map.md`',
-      '3. `intake-questionnaire.md`',
-      '4. `deep-interview.md`',
-      '5. `execution-spec.md`',
-      '6. `quality-frontier.md`',
-      '7. `pruning-matrix.md`',
-      '8. `selected-strategy.md`',
-      '9. `harness.md`',
-      '10. `runtime-commands.md`',
-      '11. `agents.md`',
-      '12. `orchestration.md`',
-      '13. `team-system.md`',
-      '14. `worker-packet-template.md`',
-      '15. `trajectory-ledger.md`',
-      '16. `state-ledger.md`',
-      '17. `local-optimum-pressure.md`',
-      '18. `completion-gate.md`',
+      '2. `objective.txt`',
+      '3. `ambiguity-map.md`',
+      '4. `intake-questionnaire.md`',
+      '5. `deep-interview.md`',
+      '6. `execution-spec.md`',
+      '7. `quality-frontier.md`',
+      '8. `pruning-matrix.md`',
+      '9. `selected-strategy.md`',
+      '10. `design-system.md`',
+      '11. `secrets-and-auth.md`',
+      '12. `deployment.md`',
+      '13. `harness.md`',
+      '14. `runtime-commands.md`',
+      '15. `plugin-root-resolver.mjs`',
+      '16. `agents.md`',
+      '17. `orchestration.md`',
+      '18. `team-system.md`',
+      '19. `worker-packet-template.md`',
+      '20. `trajectory-ledger.md`',
+      '21. `state-ledger.md`',
+      '22. `local-optimum-pressure.md`',
+      '23. `completion-gate.md`',
       '',
       'The Codex goal owns active focus and token accounting. These files provide local durable context and evidence structure.',
     ]),
@@ -383,7 +953,7 @@ function artifactMap({ objective, slug, route, answers }) {
       '',
       `Objective: ${objective}`,
       '',
-      'This map follows the OMX deep-interview pattern: resolve material ambiguity, record safe assumptions, and keep non-goals plus decision boundaries explicit.',
+      'This map follows the Oh My Goal deep-interview pattern: resolve material ambiguity, record safe assumptions, and keep non-goals plus decision boundaries explicit.',
       '',
       markdownTable(['Dimension', 'Current default or answer', 'Risk', 'Resolution rule'], ambiguityRows(objective, answers)),
     ]),
@@ -536,6 +1106,71 @@ function artifactMap({ objective, slug, route, answers }) {
       '- Compare selected path against at least one quality or novelty alternative when the task is non-trivial.',
       '- Record comparison evidence in `trajectory-ledger.md` or pressure runtime state before completion.',
     ]),
+    'design-system.md': lines([
+      designSystemMarkdown,
+      '',
+      ...designIntegrationLines(designSystemMode),
+    ]),
+    'secrets-and-auth.md': lines([
+      '# Secrets And Auth',
+      '',
+      'Secret policy: never paste raw API keys or auth secrets into Codex chat, committed Markdown, screenshots, or generated source files.',
+      '',
+      `LLM API: ${answerValue(answers, 'llmApi', 'no-llm-api')}`,
+      `Auth provider: ${answerValue(answers, 'authProvider', 'no-auth')}`,
+      `Secret handling: ${answerValue(answers, 'secretHandling', 'vercel-env-secure-prompt')}`,
+      `Credential setup: ${answerValue(answers, 'credentialSetup', 'secure-terminal-prompt')}`,
+      '',
+      '## Required Environment Variables',
+      ...(envRequirementsFromAnswers(answers, objective).length > 0
+        ? envRequirementsFromAnswers(answers, objective).map(([name, reason]) => `- \`${name}\` - ${reason}`)
+        : ['- None from current intake answers.']),
+      '',
+      '## Safe Setup Flow',
+      '1. Generate `.env.example` with variable names only when implementation needs it.',
+      '2. For Vercel, use `vercel env add <NAME> preview` or `vercel env add <NAME> production`; enter values only in the secure prompt.',
+      '3. For local runs, use `.env.local`, shell env, or platform secrets. Keep `.env.local` uncommitted.',
+      '4. Verify server-only variables never appear in client bundles, public env names, or screenshots.',
+      '5. If intake selected `env-example-and-stop`, stop before deploy and report the generated `.omg/runtime/deployment/<slug>/.env.example` path.',
+    ]),
+    'deployment.md': lines([
+      '# Deployment',
+      '',
+      `Deployment target: ${answerValue(answers, 'deploymentTarget', 'deployment-plan-only')}`,
+      `Stack: ${answerValue(answers, 'stack', 'auto')}`,
+      '',
+      'Leader-owned deployment plan command:',
+      '',
+      '```sh',
+      deploymentCommand,
+      '```',
+      '',
+      'Leader-owned readiness and deployment commands:',
+      '',
+      '```sh',
+      deploymentCheckCommand,
+      deploymentSetupEnvCommand,
+      deploymentSetupEnvExecuteCommand,
+      deploymentPostSecretCheckCommand,
+      deploymentDeployCommand,
+      deploymentPostSecretExecuteCommand,
+      '```',
+      '',
+      '## Vercel Policy',
+      '- If target is `vercel-preview`, produce a preview URL after build verification when Vercel CLI is authenticated.',
+      '- If target is `vercel-production`, deploy production only after tests/build and completion-gate evidence pass.',
+      '- If Vercel CLI is not installed or authenticated, record that blocker and leave exact commands in `.omg/runtime/deployment/<slug>/deployment-plan.md`.',
+      '- If secrets are required, run `setup-env` as a dry run first; run `setup-env --execute` only in an attached terminal so Vercel can prompt securely.',
+      '- Never block local implementation on secrets that can be represented as placeholders, but do block deployment completion until required env vars are configured.',
+      '- Use `deploy --execute` only when readiness passes and secrets are configured outside chat.',
+      '',
+      '## Evidence Required',
+      '- Build command and inspected output.',
+      '- Vercel URL or explicit deployment blocker.',
+      '- Required environment variable names configured without exposing values.',
+      '- Auth/LLM smoke check when selected.',
+      '- `.omg/runtime/deployment/<slug>/.env.example` generated when env vars are required.',
+    ]),
     'harness.md': lines([
       '# Harness',
       '',
@@ -544,16 +1179,19 @@ function artifactMap({ objective, slug, route, answers }) {
       '3. Batch independent high-leverage ambiguity questions into one structured intake round when possible.',
       '4. Run gap-fill passes after answers: assimilation, residual critical-gap scan, then follow-up questions until ambiguity is low enough.',
       '5. Run quality frontier expansion and pruning before selecting a path.',
-      '6. Create or reuse one Codex goal with the prompt in `goal-prompt.md`.',
-      '7. Read `runtime-commands.md` and initialize pressure runtime before selecting a path.',
-      '8. Auto-start Team runtime when independent lanes improve quality.',
-      '9. Execute the selected trajectory with evidence checkpoints.',
-      '10. Add worker lanes only when they create independent evidence.',
-      '11. Give every worker a packet from `worker-packet-template.md`.',
-      '12. Record candidate paths in `trajectory-ledger.md`.',
-      '13. Checkpoint leader decisions in `state-ledger.md`.',
-      '14. Run pressure runtime gate before late completion.',
-      '15. Complete only after both `completion-gate.md` and pressure runtime gate pass.',
+      designHarnessStep(designSystemMode),
+      '7. Read `secrets-and-auth.md` before adding LLM API calls or auth.',
+      '8. Read `deployment.md` before Vercel setup or deploy attempts.',
+      '9. Create or reuse one Codex goal with the prompt in `goal-prompt.md`.',
+      '10. Read `runtime-commands.md` and initialize pressure runtime before selecting a path.',
+      '11. Auto-start Team runtime when independent lanes improve quality.',
+      '12. Execute the selected trajectory with evidence checkpoints.',
+      '13. Add worker lanes only when they create independent evidence.',
+      '14. Give every worker a packet from `worker-packet-template.md`.',
+      '15. Record candidate paths in `trajectory-ledger.md`.',
+      '16. Checkpoint leader decisions in `state-ledger.md`.',
+      '17. Run pressure runtime gate before late completion.',
+      '18. Complete only after design, secret/auth, deployment, completion, and pressure gates pass for the selected scope.',
       '',
       'State convention:',
       '- Append leader notes and evidence to these Markdown files.',
@@ -576,6 +1214,12 @@ function artifactMap({ objective, slug, route, answers }) {
       'Tester lane:',
       '- identifies and runs verification probes.',
       '',
+      'Designer lane:',
+      '- applies `design-system.md`, checks responsive/a11y/polish requirements, and rejects ungrounded decorative UI.',
+      '',
+      'Deployer lane:',
+      '- prepares Vercel/env evidence from `deployment.md` and never handles raw secrets in chat.',
+      '',
       'Critic lane:',
       '- tries to disprove the selected trajectory and completion claim.',
       '',
@@ -591,6 +1235,10 @@ function artifactMap({ objective, slug, route, answers }) {
       '# Runtime Commands',
       '',
       'These commands are for the Codex goal leader. The user should not need to run them manually.',
+      '',
+      'The commands resolve the installed Oh My Goal plugin root at runtime through `plugin-root-resolver.mjs`; no generated command depends on the machine that created this harness.',
+      'Commands read the full user objective from `objective.txt`, so the recommended Codex goal prompt can stay below the objective-length limit.',
+      'If resolution fails on a new machine, set `OH_MY_GOAL_PLUGIN_ROOT` to the installed plugin directory that contains `scripts/create-harness.mjs`.',
       '',
       '## Pressure Runtime Auto-Start',
       '',
@@ -610,9 +1258,9 @@ function artifactMap({ objective, slug, route, answers }) {
       'Record evidence-backed trajectories as work proceeds:',
       '',
       '```sh',
-      `node ${shellQuote(pressureRuntimeScriptPath())} record --slug ${shellQuote(slug)} --id T001-baseline --summary "<baseline path>" --evidence "<files/commands/observations>" --score <0-100> --novelty-score 10 --json`,
-      `node ${shellQuote(pressureRuntimeScriptPath())} record --slug ${shellQuote(slug)} --id T002-novelty --source worker --role replanner --summary "<different path>" --evidence "<files/commands/observations>" --score <0-100> --novelty-score 70 --json`,
-      `node ${shellQuote(pressureRuntimeScriptPath())} select --slug ${shellQuote(slug)} --trajectory-id <id> --evidence "<why this path beats alternatives>" --json`,
+      pressureRecordBaselineCommand,
+      pressureRecordNoveltyCommand,
+      pressureSelectCommand,
       '```',
       '',
       'Before completion, run the pressure gate with the same evidence JSON used for the completion audit:',
@@ -621,19 +1269,71 @@ function artifactMap({ objective, slug, route, answers }) {
       pressureGateCommand,
       '```',
       '',
+      ...designRuntimeSection(designSystemMode, slug, designCommand),
+      '',
+      '## Deployment And Secret Runtime',
+      '',
+      'Run this before Vercel deploy attempts or env setup. It writes `.omg/runtime/deployment/' + slug + '/deployment-plan.md`.',
+      '',
+      '```sh',
+      deploymentCommand,
+      '```',
+      '',
+      'After implementation, verify readiness and dry-run deployment:',
+      '',
+      '```sh',
+      deploymentCheckCommand,
+      deploymentSetupEnvCommand,
+      deploymentDeployCommand,
+      '```',
+      '',
+      'If secret env vars are required, run setup in an attached terminal before final readiness/deploy:',
+      '',
+      '```sh',
+      deploymentSetupEnvExecuteCommand,
+      deploymentPostSecretCheckCommand,
+      '```',
+      '',
+      'Only after tests/build pass and required secrets are configured outside chat, execute deployment:',
+      '',
+      '```sh',
+      deploymentPostSecretExecuteCommand,
+      '```',
+      '',
+      'Secret rule: do not paste raw API keys into Codex chat. Use Vercel secure prompts, dashboard env vars, shell env, or uncommitted `.env.local` files.',
+      '',
       '## Team Runtime Auto-Start',
       '',
-      'Run this before implementation when independent evidence lanes improve quality, the route is `agent_orchestrated`, or architect/tester/critic separation is useful:',
+      teamRequired
+        ? 'This harness requires visible worker lanes before implementation. Run this command and require `status: "launched"`; if it returns `blocked`, stop and report the cmux/tmux blocker instead of continuing as a leader-only run:'
+        : 'Run this before implementation when independent evidence lanes improve quality, the route is `agent_orchestrated`, or architect/tester/critic separation is useful:',
       '',
       '```sh',
       autoTeamCommand,
       '```',
       '',
+      'Explicit sequential fallback command, only after the user accepts no visible worker panes:',
+      '',
+      '```sh',
+      plannedTeamCommand,
+      '```',
+      '',
       'Expected behavior:',
       '- Inside cmux, this opens visible worker panes in the current workspace, renames each surface as `OMG <worker> <role>`, and writes worker state.',
       '- Inside attached tmux, this opens visible worker panes and writes worker state.',
-      '- Outside cmux/tmux, it returns planned state, still writes `.omg/runtime/team/' + slug + '/`, and the leader continues sequentially from worker packets.',
+      teamRequired
+        ? '- Outside cmux/tmux, the strict command returns `blocked`; do not silently collapse into single-session execution.'
+        : '- Outside cmux/tmux, it returns planned state, still writes `.omg/runtime/team/' + slug + '/`, and the leader continues sequentially from worker packets.',
       '- Workers must write evidence to `.omg/runtime/team/' + slug + '/workers/<worker>/result.md`.',
+      '- The leader should run the orchestrator tick after worker status/results change; it reclaims blocked work, creates follow-up tasks, assigns ready tasks, closes idle worker panes, and reopens hibernated lanes when new work lands.',
+      '',
+      'Sustained watch loop, recommended while worker panes are open:',
+      '',
+      '```sh',
+      teamWatchCommand,
+      '```',
+      '',
+      'The watch loop repeatedly runs `tick -> collect -> pressure import-team -> pressure status -> follow-up tick`, notifies visible workers when new work is assigned, creates bounded dynamic worker lanes when ready work exceeds available lanes, closes completed worker panes with no open tasks, and writes `.omg/runtime/team/' + slug + '/watch.ndjson`. Stop it before final shutdown or after pressure/completion gates pass.',
       '',
       '## CMUX Visibility',
       '',
@@ -647,27 +1347,29 @@ function artifactMap({ objective, slug, route, answers }) {
       '## Inspect And Collect',
       '',
       '```sh',
-      `node ${shellQuote(teamRuntimeScriptPath())} status --team ${shellQuote(slug)} --json`,
-      `node ${shellQuote(teamRuntimeScriptPath())} collect --team ${shellQuote(slug)} --json`,
+      teamStatusCommand,
+      teamTickCommand,
+      teamCollectCommand,
       pressureImportTeamCommand,
       '```',
       '',
-      'Use `import-team` after workers write `result.md`; it converts Team evidence into pressure-runtime trajectories.',
+      'Use `tick` before and after collection when worker output reveals blockers, low scores, missing evidence, or pressure-gate gaps. `--close-idle-minutes 10` hibernates visible panes with no open tasks and relaunches them automatically if later assigned work. Use `import-team` after workers write `result.md`; it converts Team evidence into pressure-runtime trajectories.',
       '',
       '## Cleanup',
       '',
       '```sh',
-      `node ${shellQuote(teamRuntimeScriptPath())} shutdown --team ${shellQuote(slug)} --json`,
+      teamShutdownCommand,
       '```',
       '',
-      'If the embedded plugin cache path no longer exists, locate the installed `oh-my-goal` plugin and use its `scripts/team-runtime.mjs` with the same arguments.',
+      'If the resolver cannot locate the plugin after moving machines, install the plugin there or set `OH_MY_GOAL_PLUGIN_ROOT` explicitly.',
     ]),
+    'plugin-root-resolver.mjs': pluginRootResolverSource(),
     'orchestration.md': lines([
       '# Orchestration',
       '',
       'Use native Codex subagents or available agent tools when present. If none are available, run the same lanes sequentially.',
       '',
-      'This borrows the useful part of OMX Team: independent evidence lanes with explicit boundaries. It does not require an OMX launcher. The leader should auto-start the plugin Team runtime when independent lanes are useful.',
+      'This borrows the useful part of Oh My Goal Team: independent evidence lanes with explicit boundaries. It does not require an Oh My Goal launcher. The leader should auto-start the plugin Team runtime when independent lanes are useful.',
       '',
       'Auto-start command:',
       '',
@@ -678,17 +1380,26 @@ function artifactMap({ objective, slug, route, answers }) {
       '',
       'The pressure runtime decides whether the apparent best path has enough independent evidence. Team runtime supplies optional visible worker lanes for that evidence.',
       '',
-      'If the runtime reports `tmux_not_attached`, `cmux_unavailable`, or another planned-state response, use the generated `.omg/runtime/team/' + slug + '/workers/<worker>/prompt.md` packets sequentially.',
+      'Dynamic allocation:',
+      '- Run `team-runtime.mjs tick --team ' + slug + ' --pressure-slug ' + slug + ' --close-idle-minutes 10 --json` after workers report, block, or go stale.',
+      '- For sustained execution, run `team-runtime.mjs watch --team ' + slug + ' --pressure-slug ' + slug + ' --interval-ms 5000 --close-idle-minutes 10 --close-completed --notify --json`; it repeats tick, collection, pressure import/status, follow-up assignment, bounded dynamic worker scaling, worker notification, and cleanup for completed worker panes.',
+      '- The tick loop reads worker `status.json` and `result.md`, marks accepted tasks complete, creates follow-up work for revise/reject/block/low-score results, reclaims inactive work, routes ready tasks to available workers, closes idle visible panes, and reopens hibernated workers when new work is assigned.',
+      '- Use `--notify` only when you want the runtime to send a short prompt into visible cmux/tmux worker panes.',
+      '',
+      teamRequired
+        ? 'If the runtime reports `blocked`, `tmux_not_attached`, `cmux_unavailable`, or another non-launched response, stop and ask the user to restart from `cmux codex-teams` or an attached tmux surface. Use sequential packets only after explicit user approval.'
+        : 'If the runtime reports `tmux_not_attached`, `cmux_unavailable`, or another planned-state response, use the generated `.omg/runtime/team/' + slug + '/workers/<worker>/prompt.md` packets sequentially.',
       '',
       'Recommended sequence:',
       '1. Leader frames the objective and acceptance map.',
-      '2. Leader reads `execution-spec.md`, `quality-frontier.md`, and `pruning-matrix.md`.',
-      '3. Architect and critic propose competing trajectories, including at least one quality-focused alternative.',
+      '2. Leader reads `execution-spec.md`, `quality-frontier.md`, `pruning-matrix.md`, `design-system.md`, `secrets-and-auth.md`, and `deployment.md`.',
+      '3. Architect, designer, deployer, and critic propose competing trajectories, including at least one quality-focused alternative.',
       '4. Leader records the selected/pruned strategy in `selected-strategy.md`.',
       '5. Implementer executes the selected trajectory.',
       '6. Tester runs verification and records output.',
-      '7. Critic challenges completion and quality pruning.',
-      '8. Leader updates the Codex goal only after the completion gate passes.',
+      '7. Deployer records Vercel/env evidence when deployment is in scope.',
+      '8. Critic challenges completion, quality pruning, design fit, and deployment readiness.',
+      '9. Leader updates the Codex goal only after the completion gate passes.',
       '',
       'Planning voices:',
       '- Metis: clarify material ambiguity and source facts before asking the user.',
@@ -714,8 +1425,11 @@ function artifactMap({ objective, slug, route, answers }) {
       '- Workers do not call update_goal.',
       '- Workers do not mark the mission complete.',
       '- Every lane returns evidence in a packet format.',
-      '- The leader auto-starts Team runtime from `runtime-commands.md` when lane separation is useful.',
+      teamRequired
+        ? '- The leader must auto-start visible Team runtime from `runtime-commands.md` before implementation.'
+        : '- The leader auto-starts Team runtime from `runtime-commands.md` when lane separation is useful.',
       '- In cmux, worker panes must be visible through `cmux tree` and named by worker id plus role.',
+      '- The orchestrator may hibernate idle worker panes after the configured idle window and relaunch them when new work is assigned.',
       '',
       'Recommended lanes:',
       '',
@@ -724,6 +1438,8 @@ function artifactMap({ objective, slug, route, answers }) {
       '| architect | find architecture, boundaries, and integration risks | design notes, affected files, risk list |',
       '| implementer | produce focused changes or implementation plan | diff summary, files changed, blockers |',
       '| tester | validate behavior and failure modes | commands, outputs, missing coverage |',
+      '| designer | apply the design-system artifact and UI quality checks | visual/a11y/responsive findings |',
+      '| deployer | prepare Vercel/env/deployment evidence without raw secrets | deployment plan, URL, or blocker |',
       '| critic | attack assumptions and completion claim | unresolved blockers, false-positive risks |',
       '| replanner | escape stuck or low-quality paths | alternate trajectory and migration plan |',
       '',
@@ -737,12 +1453,15 @@ function artifactMap({ objective, slug, route, answers }) {
       '```md',
       '# Worker Packet',
       '',
-      'Role: <architect|implementer|tester|critic|replanner>',
+      'Role: <architect|implementer|tester|designer|deployer|critic|replanner>',
       'Task: <bounded task>',
       'Context files:',
       '- .omg/harness/' + slug + '/context-index.md',
       '- .omg/harness/' + slug + '/goal-prompt.md',
       '- .omg/harness/' + slug + '/completion-gate.md',
+      '- .omg/harness/' + slug + '/design-system.md',
+      '- .omg/harness/' + slug + '/secrets-and-auth.md',
+      '- .omg/harness/' + slug + '/deployment.md',
       '',
       'Boundary:',
       '- Do not call create_goal.',
@@ -817,6 +1536,10 @@ function artifactMap({ objective, slug, route, answers }) {
       'Required pressure points:',
       '- before plan selection: compare baseline, persistent, team-assisted, and novelty-seeking trajectories.',
       '- before implementation: compare quality-frontier candidates and prune low-leverage or scope-expanding improvements.',
+      designSystemMode === 'skip-design-system'
+        ? '- before UI implementation: keep the explicit design-system skip decision and verify only the minimal UI safety gate.'
+        : '- before UI implementation: compare the selected design-system direction against at least one alternative when visual quality materially affects success.',
+      '- before deployment: verify build, env configuration, and auth/LLM smoke evidence when Vercel is in scope.',
       '- after repeated blockers: perturb the constraints and ask for a disconfirming probe.',
       '- before completion: run critic review and basin-escape challenge.',
       '',
@@ -827,6 +1550,9 @@ function artifactMap({ objective, slug, route, answers }) {
       '- no repeated blocker without perturbation.',
       '- completion evidence includes objective audit, implementation evidence, external verification, adversarial review, and convergence challenge.',
       '- completion evidence includes quality pruning evidence: frontier considered, finalists kept, candidates cut, and selected strategy rationale.',
+      designSystemMode === 'skip-design-system'
+        ? '- completion evidence includes the explicit design-system skip record and minimal UI safety check for UI work.'
+        : '- completion evidence includes design-system evidence for UI work and deployment evidence for Vercel-scoped work.',
       '',
       'Basin-escape challenge:',
       '1. Restate the current solution and why it seems complete.',
@@ -848,6 +1574,11 @@ function artifactMap({ objective, slug, route, answers }) {
       '- Critic review found no unresolved blocker.',
       '- Basin-escape challenge compared at least two alternatives.',
       '- Quality pruning compared improvement candidates and rejected low-leverage or scope-expanding candidates.',
+      designSystemMode === 'skip-design-system'
+        ? '- Design-system skip evidence is recorded when UI or website work is in scope.'
+        : '- Design-system evidence is recorded when UI or website work is in scope.',
+      '- Secret/auth evidence is recorded when LLM API or auth is selected, without exposing secret values.',
+      '- Vercel deployment evidence or a concrete deployment blocker is recorded when deployment target includes Vercel.',
       '- Remaining non-goals are still out of scope.',
       '- Pressure runtime gate passed.',
       '',
@@ -873,6 +1604,9 @@ function artifactMap({ objective, slug, route, answers }) {
           candidatesCut: ['speculative polish'],
           selectedStrategyEvidence: 'selected-strategy.md maps quality focus to implementation evidence',
         },
+        designSystemEvidence: designCompletionEvidence(designSystemMode),
+        secretAndAuthEvidence: { status: 'passed', evidence: 'required env vars configured without exposing values' },
+        deploymentEvidence: { status: 'passed', url: 'https://example.vercel.app', evidence: 'deployment.md and runtime deployment plan inspected' },
       }, null, 2),
       '```',
     ]),

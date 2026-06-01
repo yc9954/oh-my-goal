@@ -112,7 +112,7 @@ export async function startGoalHarnessRun(
       run,
       title: 'goal-harness Codex goal handoff',
       degradedMode: true,
-      completionCommand: `omx goal-harness complete --slug ${run.slug} --codex-goal-json <fresh-complete-get_goal-json-or-path>`,
+      completionCommand: `omg complete --slug ${run.slug} --codex-goal-json <fresh-complete-get_goal-json-or-path>`,
     }),
     '',
     'Goal-harness execution policy:',
@@ -121,9 +121,9 @@ export async function startGoalHarnessRun(
     '- Use deep-interview only when ambiguity remains material.',
     '- Use Team lanes only for evidence-producing exploration, implementation, testing, or critique.',
     '- Run a late basin-escape challenge before completion.',
-    `- Persist local completion validation with: omx goal-harness gate --slug ${run.slug} --evidence-json <completion-evidence-json>.`,
+    `- Persist local completion validation with: omg gate --slug ${run.slug} --evidence-json <completion-evidence-json>.`,
     '- The leader is the only actor allowed to call update_goal({status: "complete"}).',
-    `- After update_goal succeeds, call get_goal again and finish durable reconciliation with: omx goal-harness complete --slug ${run.slug} --codex-goal-json <fresh-complete-get_goal-json-or-path>.`,
+    `- After update_goal succeeds, call get_goal again and finish durable reconciliation with: omg complete --slug ${run.slug} --codex-goal-json <fresh-complete-get_goal-json-or-path>.`,
   ].join('\n');
   return { run, instruction };
 }

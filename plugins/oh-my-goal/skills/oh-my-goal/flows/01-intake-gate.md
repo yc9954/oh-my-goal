@@ -1,16 +1,28 @@
 # Intake Gate
 
-The intake gate ports the useful behavior from OMX `$deep-interview` and `$prometheus-strict`.
+The intake gate runs Oh My Goal's structured deep interview.
+
+## Optional Capability Preflight
+
+Before structured intake, run the user-facing optional setup offer:
+
+```sh
+node <plugin-root>/scripts/openai-key-runtime.mjs offer --cwd "<cwd>" --keys OPENAI_API_KEY,ZEP_API_KEY --json
+```
+
+If an attached terminal is available and keys are missing, run the same command with `--execute`. It asks whether to enable each optional capability, hidden-inputs only accepted keys, writes them to uncommitted `.env.local`, updates `.gitignore`, and records redacted status. Missing or skipped keys do not block Codex-native intake. They only mean local Node-based LLM question generation and later Zep-backed memory features are unavailable until configured. Do not ask for raw API key values in chat. If the selected plan requires deployed secrets, route setup through Vercel env, dashboard env, or shell env instead of chat.
 
 ## Preflight
 
-Before asking the user, inspect only focused context:
+Before asking the user, run a repository-aware review pass over the current folder:
 
 - current working directory and whether it is a git repo,
 - top-level files such as `README*`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, or `docs/**`,
 - existing `.omg/harness/**` for continuation state.
 
 Do not scan `node_modules`, generated caches, build outputs, or vendor trees unless explicitly relevant.
+
+The question engine should use that review as question-generation context. When `OPENAI_API_KEY` is configured, let the LLM add repo-specific high-leverage questions; if the LLM is unavailable, use the deterministic repo-aware fallback questions. Do not mix demo, calculator, or dummy survey content into real project questions unless the objective explicitly asks for it.
 
 ## Ambiguity Map
 
@@ -38,19 +50,35 @@ Cover at least:
 
 The runtime may ask these as baseline questions or append them as follow-ups after ambiguity falls below threshold. `ok: true` requires both low residual ambiguity and completed quality pruning.
 
+## Web App, Secret, Auth, And Deployment Decisions
+
+For website/app requests, also cover:
+
+- `deploymentTarget`: Vercel preview, Vercel production, deployment-plan-only, or no deployment.
+- `llmApi`: no LLM API, OpenAI API, OpenAI-compatible API, or decide after spec.
+- `authProvider`: no auth, Clerk, Auth.js/NextAuth, Supabase Auth, or custom auth.
+- `secretHandling`: Vercel secure prompt, `.env.example` only, existing env only, or no secrets.
+- `credentialSetup`: secure terminal prompt, already configured Vercel env, already configured local env, `.env.example` then pause, or no credentials.
+- `designSystemMode`: generate full design system, lightweight checklist, match existing design system, or skip.
+
+Do not ask for raw API key values in chat. If the user wants to enter keys, route them through secure terminal prompts, Vercel env commands, dashboard setup, shell env, or uncommitted `.env.local`.
+
 ## Structured Intake
 
 Path rule: `<plugin-root>` is two directories above this skill directory. Use `<plugin-root>/scripts/intake-question-engine.mjs`, not `skills/oh-my-goal/scripts/intake-question-engine.mjs`.
 
-Build the question payload with the bundled OMX-derived question engine:
+Build the question payload with the bundled Oh My Goal question engine:
 
 ```sh
 node <plugin-root>/scripts/intake-question-engine.mjs \
   --objective "<objective>" \
+  --cwd "<cwd>" \
+  --repo-review \
+  --llm auto \
   --format payload
 ```
 
-The payload must use canonical OMX question fields:
+The payload must use canonical Oh My Goal question fields:
 
 - `questions[]` for the batched round,
 - `type: "single-answerable"` for mutually exclusive choices,
@@ -65,11 +93,14 @@ For the user-facing intake, run the bundled runtime in `auto` mode first:
 ```sh
 node <plugin-root>/scripts/intake-question-runtime.mjs \
   --objective "<objective>" \
+  --cwd "<cwd>" \
+  --repo-review \
+  --llm auto \
   --mode auto \
   --json
 ```
 
-Inside cmux, `auto` opens a focused in-workspace question pane. In attached tmux, it opens a separate arrow-key question pane. On macOS outside cmux/tmux, it can open a Terminal question window with the same selector. The UI core is ported from OMX `src/question/ui.ts`: ↑↓ movement, Enter selects the current option, Space toggles `multi-answerable`, → advances the current question in the wizard, and ← goes back.
+Inside cmux, `auto` opens a focused in-workspace question pane. In attached tmux, it opens a separate arrow-key question pane. On macOS outside cmux/tmux, it can open a Terminal question window with the same selector. These temporary question surfaces close themselves after the final answer is recorded and the leader is notified. The UI core provides ↑↓ movement, Enter selects the current option, Space toggles `multi-answerable`, → advances the current question in the wizard, and ← goes back.
 
 If `auto` returns `ok: false`, `interactive: true`, and `status: "prompting"`, tell the user to answer in that window and stop. Do not ask the text fallback question too. On the next user turn, read the record:
 
@@ -104,7 +135,7 @@ For PRD/spec/planning requests, ask about:
 - verification: Markdown inspection, repo checks, stakeholder review, or full test suite,
 - handoff target: goal prompt only, goal plus team lanes, PRD only, or implementation after approval.
 
-For implementation requests, still ask intake before writing code. Adapt the same slots to scope, stack, UX, functionality, verification, and output mode.
+For implementation requests, still ask intake before writing code. Adapt the same slots to scope, stack, UX, functionality, verification, output mode, design-system, LLM/API, auth, secret handling, credential setup, and deployment.
 
 ## Gap-Fill Passes
 

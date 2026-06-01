@@ -9,7 +9,7 @@ import {
 } from '../policy.js';
 
 describe('goal-harness policy', () => {
-  it('refines a raw request into a single-goal Codex objective with OMX policy', () => {
+  it('refines a raw request into a single-goal Codex objective with OMG policy', () => {
     const refined = buildRefinedGoalPrompt('Build a new architecture for long-running autonomous research with team agents and verification.');
 
     assert.match(refined.objective, /Use one Codex goal as the single top-level source of truth/);
@@ -66,6 +66,7 @@ describe('goal-harness policy', () => {
       implementationEvidence: ['diff'],
       externalVerification: [{ command: 'npm test', status: 'pass', evidence: 'passed' }],
       adversarialReview: { status: 'clear', evidence: 'critic clear' },
+      qualityPruning: { status: 'passed', candidatesConsidered: 2, selectedStrategy: 'smallest verified path', evidence: 'quality candidates compared' },
       convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'basin escape passed' },
     });
     assert.equal(workerDecision.allowed, false);
@@ -77,6 +78,7 @@ describe('goal-harness policy', () => {
       implementationEvidence: ['src/goal-harness/policy.ts implemented'],
       externalVerification: [{ command: 'npm test', status: 'pass', evidence: 'all relevant tests passed' }],
       adversarialReview: { status: 'clear', evidence: 'critic found no blockers' },
+      qualityPruning: { status: 'passed', candidatesConsidered: 3, selectedStrategy: 'quality-frontier winner', evidence: 'quality candidates were pruned before completion' },
       convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'alternate route rejected by evidence' },
     });
     assert.equal(leaderDecision.allowed, true);
@@ -90,6 +92,7 @@ describe('goal-harness policy', () => {
       implementationEvidence: ['   '],
       externalVerification: [{ command: 'npm test', status: 'pass', evidence: 'focused tests passed' }],
       adversarialReview: { status: 'clear', evidence: 'critic clear' },
+      qualityPruning: { status: 'passed', candidatesConsidered: 2, selectedStrategy: 'bounded quality path', evidence: 'quality pruning passed' },
       convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'two alternatives rejected by evidence' },
     });
     assert.equal(emptyImplementation.allowed, false);
@@ -101,6 +104,7 @@ describe('goal-harness policy', () => {
       implementationEvidence: ['src/goal-harness/policy.ts tightened completion evidence checks'],
       externalVerification: [{ command: 'npm test', status: 'pass', evidence: 'focused tests passed' }],
       adversarialReview: { status: 'clear', evidence: 'critic clear' },
+      qualityPruning: { status: 'passed', candidatesConsidered: 2, selectedStrategy: 'bounded quality path', evidence: 'quality pruning passed' },
       convergenceChallenge: { status: 'passed', alternativesConsidered: Number.NaN, evidence: 'alternative rejected by evidence' },
     });
     assert.equal(missingAlternativeCount.allowed, false);
@@ -112,6 +116,7 @@ describe('goal-harness policy', () => {
       implementationEvidence: ['src/goal-harness/policy.ts tightened completion evidence checks'],
       externalVerification: [{ command: 'npm test', status: 'pass', evidence: 'focused tests passed' }],
       adversarialReview: { status: 'issues', evidence: 'critic found a missed completion edge case' },
+      qualityPruning: { status: 'passed', candidatesConsidered: 2, selectedStrategy: 'bounded quality path', evidence: 'quality pruning passed' },
       convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'alternative rejected by evidence' },
     });
     assert.equal(adversarialIssues.allowed, false);
@@ -125,6 +130,7 @@ describe('goal-harness policy', () => {
       implementationEvidence: ['src/goal-harness/policy.ts tightened completion evidence checks'],
       externalVerification: [{ status: 'pass', evidence: 'I inspected it and it passed' }],
       adversarialReview: { status: 'clear', evidence: 'critic clear' },
+      qualityPruning: { status: 'passed', candidatesConsidered: 2, selectedStrategy: 'bounded quality path', evidence: 'quality pruning passed' },
       convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'two alternatives rejected by evidence' },
     });
     assert.equal(selfAssertedVerification.allowed, false);
@@ -136,9 +142,35 @@ describe('goal-harness policy', () => {
       implementationEvidence: ['src/goal-harness/policy.ts tightened completion evidence checks'],
       externalVerification: [{ command: 'npm test', status: 'pass', evidence: 'focused tests passed' }],
       adversarialReview: { status: 'clear', evidence: 'critic clear' },
+      qualityPruning: { status: 'passed', candidatesConsidered: 2, selectedStrategy: 'bounded quality path', evidence: 'quality pruning passed' },
       convergenceChallenge: { status: 'passed', alternativesConsidered: 1, evidence: 'only one alternative was considered' },
     });
     assert.equal(singleAlternative.allowed, false);
     assert.match(singleAlternative.missing.join(' '), /at least two alternatives/);
+  });
+
+  it('requires quality pruning before completion can converge', () => {
+    const missingQuality = evaluateGoalHarnessCompletionGate({
+      actor: 'leader',
+      objectiveAudit: 'requirements mapped',
+      implementationEvidence: ['src/goal-harness/policy.ts added quality pruning gate'],
+      externalVerification: [{ command: 'npm test', status: 'pass', evidence: 'focused tests passed' }],
+      adversarialReview: { status: 'clear', evidence: 'critic clear' },
+      convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'two alternatives rejected by evidence' },
+    });
+    assert.equal(missingQuality.allowed, false);
+    assert.match(missingQuality.missing.join(' '), /quality pruning evidence/);
+
+    const failedQuality = evaluateGoalHarnessCompletionGate({
+      actor: 'leader',
+      objectiveAudit: 'requirements mapped',
+      implementationEvidence: ['src/goal-harness/policy.ts added quality pruning gate'],
+      externalVerification: [{ command: 'npm test', status: 'pass', evidence: 'focused tests passed' }],
+      adversarialReview: { status: 'clear', evidence: 'critic clear' },
+      qualityPruning: { status: 'failed', candidatesConsidered: 3, selectedStrategy: 'unclear', evidence: 'quality review found better unexplored paths' },
+      convergenceChallenge: { status: 'passed', alternativesConsidered: 2, evidence: 'two alternatives rejected by evidence' },
+    });
+    assert.equal(failedQuality.allowed, false);
+    assert.match(failedQuality.blockers.join(' '), /quality pruning is failed/);
   });
 });

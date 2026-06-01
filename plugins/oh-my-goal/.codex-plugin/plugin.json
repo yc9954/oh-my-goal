@@ -1,7 +1,7 @@
 {
   "name": "oh-my-goal",
-  "version": "0.18.6+codex.20260529155337",
-  "description": "Codex-native `$oh-my-goal <objective>` intake, OMX-style structured interview, team orchestration, and local-optimum pressure artifacts.",
+  "version": "0.18.26+codex.20260601132954",
+  "description": "Codex-native `$oh-my-goal <objective>` intake, structured interview, team orchestration, design-system, deployment, and local-optimum pressure artifacts.",
   "author": {
     "name": "yc9954",
     "url": "https://github.com/yc9954"
@@ -13,7 +13,7 @@
   "interface": {
     "displayName": "Oh My Goal",
     "shortDescription": "Goal-first team harness builder for Codex.",
-    "longDescription": "Oh My Goal is a Codex-native plugin skill that accepts `$oh-my-goal <objective>`, runs an OMX-style structured deep interview, writes repo-local harness Markdown artifacts, recommends a create_goal prompt, and sets up Team-style evidence lanes plus anti-local-optimum pressure without requiring an omx launcher.",
+    "longDescription": "Oh My Goal is a Codex-native plugin skill that accepts `$oh-my-goal <objective>`, runs a structured deep interview, writes repo-local harness Markdown artifacts, recommends a create_goal prompt, and sets up Team-style evidence lanes, design-system guidance, Vercel/env deployment flow, and anti-local-optimum pressure without requiring a separate launcher.",
     "developerName": "yc9954",
     "category": "Developer Tools",
     "capabilities": [],

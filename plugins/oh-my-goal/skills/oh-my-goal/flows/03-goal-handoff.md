@@ -14,10 +14,15 @@ The handoff response must include:
 The recommended goal prompt must:
 
 - keep one Codex goal as the single top-level objective,
-- include the original objective, acceptance criteria, non-goals, and verification,
+- reference `objective.txt` for the full original request instead of pasting long objectives into the Codex goal body,
+- compress acceptance criteria, non-goals, verification, external-service blockers, and domain-critical constraints into a short execution focus,
 - require the leader to use `.omg/harness/<slug>/`,
 - require reading `runtime-commands.md` before execution,
-- require the leader to auto-start Team runtime when independent work improves quality,
+- require reading `design-system.md`, `secrets-and-auth.md`, and `deployment.md` before UI, LLM/auth, or Vercel work,
+- require deployment readiness and dry-run evidence before any `deployment-runtime.mjs deploy --execute` attempt,
+- require `deployment-runtime.mjs setup-env --execute` in an attached terminal when Vercel/OpenAI/auth secrets are needed and not already configured,
+- require the leader to auto-start visible Team runtime before coding for implementation goals, unless the user explicitly chose leader-only/no-worker mode,
+- require secure secret handling and forbid raw API keys in chat or committed artifacts,
 - forbid asking the user to run Team runtime manually,
 - require at least two materially different trajectories before major commitment,
 - require adversarial review and basin-escape challenge before completion,

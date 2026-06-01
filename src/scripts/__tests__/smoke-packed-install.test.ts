@@ -7,62 +7,32 @@ import { test } from 'node:test';
 import {
   ensureRepoDependencies,
   hasUsableNodeModules,
-  buildNativeHookSmokePayload,
-  PACKED_INSTALL_NATIVE_HOOK_SMOKE_EVENTS,
   PACKED_INSTALL_SMOKE_GOAL_COMMANDS,
   parseNpmPackJsonOutput,
   resolveGitCommonDir,
   resolveReusableNodeModulesSource,
-  validateHookStdout,
 } from '../smoke-packed-install.js';
 
 test('packed install smoke covers the sibling goal product boot path', () => {
   assert.deepEqual(PACKED_INSTALL_SMOKE_GOAL_COMMANDS, [
     ['--help'],
     ['version'],
+    ['refine', '--objective', 'Ship safely'],
   ]);
-});
-
-test('packed install smoke covers every installed native hook event with minimal payloads', () => {
-  assert.deepEqual(PACKED_INSTALL_NATIVE_HOOK_SMOKE_EVENTS, [
-    'SessionStart',
-    'PreToolUse',
-    'PostToolUse',
-    'UserPromptSubmit',
-    'PreCompact',
-    'PostCompact',
-    'Stop',
-  ]);
-
-  for (const eventName of PACKED_INSTALL_NATIVE_HOOK_SMOKE_EVENTS) {
-    const payload = buildNativeHookSmokePayload(eventName, '/tmp/omx-packed-hook-smoke');
-    assert.equal(payload.hook_event_name, eventName);
-    assert.equal(typeof payload.session_id, 'string');
-    assert.equal(payload.cwd, '/tmp/omx-packed-hook-smoke');
-  }
-});
-
-test('packed install native hook stdout validation allows empty or JSON output only', () => {
-  assert.doesNotThrow(() => validateHookStdout('PostCompact', ''));
-  assert.doesNotThrow(() => validateHookStdout('Stop', '{}\n'));
-  assert.throws(
-    () => validateHookStdout('UserPromptSubmit', '{not json'),
-    /native hook UserPromptSubmit emitted invalid JSON stdout/,
-  );
 });
 
 test('parseNpmPackJsonOutput ignores prepack logs before npm pack JSON', () => {
   const parsed = parseNpmPackJsonOutput([
-    '[sync-plugin-mirror] synced 29 canonical skill directories and plugin metadata',
+    'Oh My Goal plugin verification passed.',
     '[',
     '  {',
-    '    "filename": "oh-my-codex-0.15.0.tgz"',
+    '    "filename": "oh-my-goal-0.18.6.tgz"',
     '  }',
     ']',
     '',
   ].join('\n'));
 
-  assert.deepEqual(parsed, [{ filename: 'oh-my-codex-0.15.0.tgz' }]);
+  assert.deepEqual(parsed, [{ filename: 'oh-my-goal-0.18.6.tgz' }]);
 });
 
 test('resolveGitCommonDir resolves relative git common dir output against the repo root', () => {
@@ -75,7 +45,7 @@ test('resolveGitCommonDir resolves relative git common dir output against the re
 });
 
 test('hasUsableNodeModules requires the packaged build dependencies', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'omx-smoke-node-modules-'));
+  const root = await mkdtemp(join(tmpdir(), 'omg-smoke-node-modules-'));
   try {
     const nodeModules = join(root, 'node_modules');
     await mkdir(join(nodeModules, 'typescript'), { recursive: true });
@@ -97,7 +67,7 @@ test('hasUsableNodeModules requires the packaged build dependencies', async () =
 });
 
 test('resolveReusableNodeModulesSource reuses primary worktree node_modules when available', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'omx-smoke-reuse-node-modules-'));
+  const root = await mkdtemp(join(tmpdir(), 'omg-smoke-reuse-node-modules-'));
   try {
     const primaryRepo = join(root, 'primary');
     const worktreeRepo = join(root, 'worktree');
@@ -124,7 +94,7 @@ test('resolveReusableNodeModulesSource reuses primary worktree node_modules when
 });
 
 test('ensureRepoDependencies symlinks a reusable primary worktree node_modules', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'omx-smoke-symlink-node-modules-'));
+  const root = await mkdtemp(join(tmpdir(), 'omg-smoke-symlink-node-modules-'));
   try {
     const primaryRepo = join(root, 'primary');
     const worktreeRepo = join(root, 'worktree');
@@ -160,7 +130,7 @@ test('ensureRepoDependencies symlinks a reusable primary worktree node_modules',
 });
 
 test('ensureRepoDependencies falls back to npm ci when no reusable node_modules source exists', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'omx-smoke-install-node-modules-'));
+  const root = await mkdtemp(join(tmpdir(), 'omg-smoke-install-node-modules-'));
   try {
     const installs: string[] = [];
     const result = ensureRepoDependencies(root, {
