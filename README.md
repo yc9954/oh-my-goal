@@ -1,43 +1,75 @@
-# Oh My Goal
+<h1 align="center">Oh My Goal</h1>
 
-Oh My Goal is a Codex-native goal harness plugin for long-running work. It keeps one Codex goal as the single top-level objective, then writes repo-local harness artifacts for deep interview, planning, agent lanes, local-optimum pressure, and completion gates.
+<p align="center">
+  <a href="https://github.com/yc9954/oh-my-goal"><img src="https://img.shields.io/github/stars/yc9954/oh-my-goal?style=flat&amp;label=%E2%98%85&amp;color=4493F8" alt="GitHub stars" /></a>
+  <a href="https://github.com/yc9954/oh-my-goal/actions/workflows/ci.yml"><img src="https://github.com/yc9954/oh-my-goal/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <img src="https://img.shields.io/badge/Codex%20plugin-%24oh--my--goal-4493F8?style=flat" alt="Codex plugin: $oh-my-goal" />
+  <img src="https://img.shields.io/badge/Node%2020%2B%20%C2%B7%20TypeScript%206-4493F8?style=flat" alt="Node 20+, TypeScript 6" />
+  <img src="https://img.shields.io/badge/version-0.18.29-4493F8?style=flat" alt="version 0.18.29" />
+</p>
 
-The primary surface is the `oh-my-goal` Codex plugin skill. The `omg` CLI remains a compatibility helper, but the plugin does not require a separate launcher.
+<p align="center">
+  <strong>One Codex goal. A repo-local harness. Pressure against the first plausible answer.</strong><br/>
+  Oh My Goal is a Codex-native plugin skill for long-running work. <code>$oh-my-goal &lt;objective&gt;</code> runs a structured intake,<br/>
+  writes Markdown harness artifacts under <code>.omg/harness/&lt;slug&gt;/</code>, recommends a <code>create_goal</code> prompt, and gives the leader<br/>
+  optional worker lanes, design and deployment gates, and a completion gate it cannot skip.
+</p>
 
-## Plugin-First Flow
+<h3 align="center"><a href="#getting-started"><ins>Getting started</ins></a> · <a href="plugins/oh-my-goal/skills/oh-my-goal/FLOW.md">The flow</a></h3>
 
-Install the Codex plugin directly from the GitHub marketplace source:
+## Features
 
-```bash
-codex --version
-codex plugin marketplace add yc9954/oh-my-goal --ref main
-codex plugin add oh-my-goal@oh-my-goal-local
-```
+- **Plugin-first.** The primary surface is the `oh-my-goal` Codex plugin skill. Text after `$oh-my-goal` is the objective; the plugin never asks for it again. The `omg` CLI remains as a compatibility helper, but no separate launcher is required.
+- **Intake before anything else.** The first response is a questionnaire, not an execution turn. The plugin does not create harness files, write implementation files, or call `create_goal` until the questions are answered or the user explicitly says to use defaults ("proceed" is not enough).
+- **Two-stage question engine.** `intake-question-engine.mjs` reduces ambiguity first, then expands and prunes quality-improvement candidates so the goal does not converge on the first plausible path. Korean objectives get Korean question and option text while canonical IDs and `selected_values` stay in English.
+- **Interactive intake where a surface exists.** Inside cmux it opens an in-workspace selector pane; inside attached tmux a separate question pane; on macOS a Terminal selector window. Without any of those it asks one sequential question at a time until residual ambiguity is low and quality pruning is complete.
+- **A harness you can read.** Generation writes `objective.txt`, `ambiguity-map.md`, `deep-interview.md`, `execution-spec.md`, `quality-frontier.md`, `pruning-matrix.md`, `selected-strategy.md`, `design-system.md`, `deployment.md`, `secrets-and-auth.md`, `goal-prompt.md`, `agents.md`, `orchestration.md`, `team-system.md`, `trajectory-ledger.md`, `state-ledger.md`, `local-optimum-pressure.md`, `completion-gate.md`, `runtime-commands.md` and a `plugin-root-resolver.mjs` that never embeds a machine-specific cache path.
+- **Visible worker lanes.** `team-runtime.mjs` writes worker packets under `.omg/runtime/team/<team>/` and opens cmux or tmux panes for leader, architect, designer, implementer, tester, deployer, critic and replanner roles. `tick` and `watch` rebalance work, create follow-ups for revise/reject/block results, reclaim stale lanes and scale bounded dynamic lanes.
+- **Runtime-enforced pressure.** `pressure-runtime.mjs` forces evidence-backed baseline/novelty/critic trajectories, imports Team `result.md` files, creates perturbations for repeated blockers, and blocks completion until `gate` passes.
+- **Design and deployment gates for web work.** `design-system-runtime.mjs` ports the useful UI/UX Pro Max snippets (BM25-style domain search, product classification, style/color/typography matching, token architecture, `MASTER.md` persistence) into a project-specific `design-system.md`. `deployment-runtime.mjs` writes `deployment.md`, `.env.example` placeholders and `secrets-and-auth.md` for Vercel, OpenAI-compatible keys and auth providers; `deploy` is a dry run unless the leader passes `--execute` after tests, build, auth and secret readiness are proven.
+- **Secrets never touch chat.** `openai-key-runtime.mjs` preflights `OPENAI_API_KEY` and `ZEP_API_KEY`; with `--execute` in an attached terminal it takes hidden input, writes only to `.env.local`, keeps `.env*.local` in `.gitignore`, and records redacted status. Missing keys do not block intake.
 
-In Codex, invoke the skill:
+---
+
+## How it works
 
 ```text
-$oh-my-goal ralpli PRD 작성하고 싶어
+$oh-my-goal <objective>
+        │
+        ▼
+openai-key-runtime.mjs offer ─── optional key preflight (hidden input, .env.local only)
+        │
+        ▼
+intake-question-engine.mjs ──▶ intake-question-runtime.mjs (cmux pane · tmux pane · macOS Terminal · sequential)
+   stage 1: reduce ambiguity          stage 2: expand + prune quality candidates
+        │
+        ▼  answers approved by the user
+create-harness.mjs --interview-complete --answers-json …
+        │
+        ▼
+.omg/harness/<slug>/  ── goal-prompt.md ──▶ create_goal (leader session owns the goal)
+        │                     │
+        │                     ├─ team-runtime.mjs launch / tick / watch ──▶ .omg/runtime/team/<team>/ + cmux/tmux panes
+        │                     ├─ pressure-runtime.mjs init / record / perturb / import-team / gate
+        │                     ├─ design-system-runtime.mjs ──▶ design-system.md
+        │                     └─ deployment-runtime.mjs plan / check / setup-env / deploy
+        ▼
+completion-gate.md: objective audit · implementation evidence · external verification ·
+                    quality-pruning evidence · adversarial review · basin-escape check
 ```
 
-Text after `$oh-my-goal` is treated as the objective. The first response is intentionally a questionnaire: the plugin should not create harness files, write implementation files, or start coding until you answer the intake questions or explicitly say to use defaults.
+1. **Preflight.** The skill reads `FLOW.md`, then offers to capture optional API keys without ever printing them into Codex chat or harness Markdown.
+2. **Intake.** Questions come from the engine's canonical schema (`questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, `selected_values`). Intake continues until ambiguity is low and quality pruning is done; it is skipped only on an explicit "skip interview" or "use defaults without asking".
+3. **Generate.** `create-harness.mjs` runs only with `--interview-complete` and the user-approved answers. `goal-prompt.md` stays compact enough for Codex goal objective limits; the full request lives in `objective.txt` and runtime commands read it from there.
+4. **Hand off.** The leader checks the active Codex goal and uses `goal-prompt.md` as the `create_goal` payload. Workers never call `create_goal` or `update_goal`; they return evidence, diffs, blockers, risks, test output and candidate trajectory scores.
+5. **Orchestrate under pressure.** The generated prompt points the leader at `runtime-commands.md` and auto-starts the Team runtime when lanes are useful. Execution is treated as trajectory search: baseline, novelty and critic trajectories are recorded, compared and perturbed before the gate.
 
-Before the questionnaire, the skill runs API key preflight for OpenAI and Zep:
-
-```bash
-node plugins/oh-my-goal/scripts/openai-key-runtime.mjs ensure \
-  --cwd "$PWD" \
-  --keys OPENAI_API_KEY,ZEP_API_KEY \
-  --json
-```
-
-If either key is missing, run the same command with `--execute` in an attached terminal. Values are hidden while typed, saved only to the local env file such as `.env.local`, and never printed into Codex chat or harness Markdown. The runtime also keeps `.env.local` and `.env*.local` in `.gitignore`, so publishing to GitHub is safe as long as real secrets are not committed manually.
-
-The skill is split into a small router plus flow files:
+<details>
+<summary><strong>The skill layout</strong></summary>
 
 ```text
 plugins/oh-my-goal/skills/oh-my-goal/
-  SKILL.md
+  SKILL.md                         the non-negotiable gate; points Codex to FLOW.md
   FLOW.md
   flows/00-entrypoint.md
   flows/01-intake-gate.md
@@ -52,31 +84,14 @@ plugins/oh-my-goal/skills/oh-my-goal/
   references/ui-ux-pro-max-analysis.md
 ```
 
-`SKILL.md` only defines the non-negotiable gate and points Codex to `FLOW.md`; the flow files hold the detailed sequence.
+Scripts live two levels up at `plugins/oh-my-goal/scripts/*.mjs`, are plain Node with no dependencies, and are runnable from a Codex plugin cache path. The generated `plugin-root-resolver.mjs` checks `OH_MY_GOAL_PLUGIN_ROOT`, repo-local `plugins/oh-my-goal`, an installed `oh-my-goal` package, and Codex plugin cache locations.
 
-The intake questionnaire is generated by the Oh My Goal question engine:
+</details>
 
-```bash
-node plugins/oh-my-goal/scripts/intake-question-engine.mjs \
-  --objective "계산기 앱을 웹사이트 형태로 만들어줘" \
-  --format payload
-```
+<details>
+<summary><strong>When cmux is blocked by the Codex sandbox</strong></summary>
 
-That payload uses the canonical `questions[]`, `single-answerable` / `multi-answerable`, `answers[]`, and `selected_values` schema. It has two stages: reduce ambiguity first, then expand and prune quality-improvement candidates so the goal does not converge on the first plausible path.
-If the objective contains Korean text, the question and option display text is rendered in Korean while canonical IDs and `selected_values` stay in English for automation. Use `--locale ko|en` to override auto-detection.
-
-For an interactive intake UI, use the optional runtime:
-
-```bash
-node plugins/oh-my-goal/scripts/intake-question-runtime.mjs \
-  --objective "계산기 앱을 웹사이트 형태로 만들어줘" \
-  --mode auto \
-  --json
-```
-
-Inside cmux it opens a focused in-workspace selector pane; inside attached tmux it opens a separate question pane; on macOS it can open a Terminal selector window. If no interactive renderer is available, it returns one sequential question at a time and keeps asking follow-ups until residual ambiguity is low enough and quality pruning is complete.
-
-If Codex reports `cmux_socket_permission_blocked`, cmux is healthy but the Codex seatbelt sandbox cannot connect to `cmux.sock`. Start the file bridge once from a normal cmux/terminal surface outside the sandbox, leave it running, then retry the same `$oh-my-goal` request:
+If Codex reports `cmux_socket_permission_blocked`, cmux is healthy but the Codex seatbelt sandbox cannot connect to `cmux.sock`. Start the file bridge once from a normal cmux or terminal surface outside the sandbox, leave it running, then retry the same `$oh-my-goal` request:
 
 ```bash
 node plugins/oh-my-goal/scripts/cmux-bridge-runtime.mjs start \
@@ -84,133 +99,139 @@ node plugins/oh-my-goal/scripts/cmux-bridge-runtime.mjs start \
   --root .omg/runtime/cmux-bridge
 ```
 
-The bridge preserves the realtime cmux features by proxying `identify`, `new-pane`, `send`, `rename-tab`, `close-surface`, and related commands through `.omg/runtime/cmux-bridge/` request/result files. Intake panes still close themselves and return `continue`; Team `watch`/`tick` can still notify, close, and reopen visible worker panes.
+The bridge proxies `identify`, `new-pane`, `send`, `rename-tab`, `close-surface` and related commands through `.omg/runtime/cmux-bridge/` request/result files, so intake panes still close themselves and Team `watch`/`tick` can still notify, close and reopen worker panes.
 
-For visible Team-style worker lanes, use the optional Oh My Goal Team runtime:
+</details>
 
-```bash
-node plugins/oh-my-goal/scripts/team-runtime.mjs launch \
-  --objective "implement UI, write tests, update docs" \
-  --workers 3 \
-  --mode auto \
-  --json
-```
+---
 
-It writes Oh My Goal `.omg/runtime/team/<team>/` state through `team-core.mjs`: `config.json`, `manifest.json`, task files, worker identity, worker status, inbox, prompt, and result paths. `team-runtime.mjs` then opens cmux or tmux worker panes when an interactive surface is attached. Without cmux/tmux, `--mode auto` keeps the same worker packets so Codex can run lanes sequentially.
+## Tech stack
 
-After workers report, block, or go stale, let the leader-side orchestrator rebalance work:
+<p>
+  <kbd>Codex&nbsp;CLI&nbsp;plugin</kbd> &nbsp; <kbd>Node&nbsp;20+</kbd> &nbsp; <kbd>TypeScript&nbsp;6</kbd> &nbsp; <kbd>plain&nbsp;.mjs&nbsp;runtimes</kbd> &nbsp; <kbd>zod</kbd> &nbsp; <kbd>@modelcontextprotocol/sdk</kbd> &nbsp; <kbd>Biome</kbd> &nbsp; <kbd>node:test</kbd> &nbsp; <kbd>cmux&nbsp;/&nbsp;tmux</kbd>
+</p>
 
-```bash
-node plugins/oh-my-goal/scripts/team-runtime.mjs tick \
-  --team implement-ui-write-tests-updat \
-  --pressure-slug example \
-  --json
-```
+---
 
-`tick` reads worker `status.json` and `result.md`, marks accepted work complete, creates follow-up tasks for revise/reject/block/low-score results, reclaims inactive work, and assigns ready tasks to available lanes. Add `--notify` only when you want it to send a short "read inbox" prompt into visible cmux/tmux panes.
+## Getting started
 
-For runtime-enforced local-optimum pressure:
+**Prerequisites**
+
+- Codex CLI (`codex --version`) with plugin support.
+- Node.js 20 or newer for the runtime scripts and local development.
+- Optional: cmux or tmux for visible intake and worker panes; Vercel CLI for the deployment runtime; `OPENAI_API_KEY` for LLM-generated repo-review questions.
+
+**Install the plugin from GitHub**
 
 ```bash
-node plugins/oh-my-goal/scripts/pressure-runtime.mjs init \
-  --objective "implement UI, write tests, update docs" \
-  --slug example \
-  --json
+codex plugin marketplace add yc9954/oh-my-goal --ref main
+codex plugin add oh-my-goal@oh-my-goal-local
 ```
 
-It writes `.omg/runtime/pressure/<slug>/` state, forces evidence-backed baseline/novelty/critic trajectories, imports Team worker `result.md` files with `pressure-runtime.mjs import-team`, creates perturbations for repeated blockers, and blocks completion until `pressure-runtime.mjs gate` passes.
-
-For web/app work, generated harnesses also include design and deployment gates. `design-system-runtime.mjs` ports the useful UI/UX Pro Max snippets into this plugin: BM25-style domain search, product classification, reasoning rules, multi-domain style/color/landing/typography matching, token architecture, MASTER.md persistence, and page overrides. It creates a project-specific `design-system.md` without requiring the upstream CLI. `deployment-runtime.mjs` creates `deployment.md`, `.env.example` placeholders under `.omg/runtime/deployment/<slug>/`, and `secrets-and-auth.md` guidance for Vercel, OpenAI-compatible API keys, auth providers, credential readiness, and safe environment-variable handling. It supports `plan`, `check`, `setup-env`, and `deploy`; `setup-env --execute` requires an attached terminal and uses Vercel's secure env prompts, while `deploy` is a dry run unless the leader passes `--execute` after tests, build, auth, and secret readiness are proven.
-
-Generated `goal-prompt.md` stays compact enough for Codex goal objective limits. The full user request lives in `objective.txt`, and runtime commands read it from that file. Runtime commands also use `.omg/harness/<slug>/plugin-root-resolver.mjs` instead of embedding the absolute plugin cache path from the machine that created the harness. The resolver checks `OH_MY_GOAL_PLUGIN_ROOT`, repo-local `plugins/oh-my-goal`, npm-installed `oh-my-goal`, and Codex plugin cache locations.
-
-For older harnesses created before quality pruning existed, generate a migration guide:
-
-```bash
-node plugins/oh-my-goal/scripts/migrate-quality-pruning.mjs \
-  --slug old-harness \
-  --apply \
-  --json
-```
-
-This writes `quality-pruning-migration.md` plus any missing `quality-frontier.md`, `pruning-matrix.md`, and `selected-strategy.md` scaffolds. It does not overwrite existing harness files.
+Then, in Codex:
 
 ```text
-.omg/harness/<slug>/
-  context-index.md
-  objective.txt
-  ambiguity-map.md
-  intake-questionnaire.md
-  deep-interview.md
-  execution-spec.md
-  quality-frontier.md
-  pruning-matrix.md
-  selected-strategy.md
-  design-system.md
-  secrets-and-auth.md
-  deployment.md
-  goal-prompt.md
-  harness.md
-  runtime-commands.md
-  plugin-root-resolver.mjs
-  agents.md
-  orchestration.md
-  team-system.md
-  worker-packet-template.md
-  trajectory-ledger.md
-  state-ledger.md
-  local-optimum-pressure.md
-  completion-gate.md
+$oh-my-goal ralpli PRD 작성하고 싶어
 ```
 
-Use `goal-prompt.md` as the recommended `create_goal` payload after checking the active Codex goal.
-The generated goal prompt points the leader at `runtime-commands.md` and tells it to auto-start Team runtime when worker lanes are useful, so users should not need to run `team-runtime.mjs` by hand.
+Answer the questionnaire. Once intake is complete the harness lands in `.omg/harness/<slug>/` and the leader is pointed at `goal-prompt.md`.
 
-## Local Development
+**Run the pieces by hand**
+
+```bash
+# key preflight (add --execute in an attached terminal to capture keys with hidden input)
+node plugins/oh-my-goal/scripts/openai-key-runtime.mjs ensure --cwd "$PWD" --keys OPENAI_API_KEY,ZEP_API_KEY --json
+
+# generate the intake payload for an objective (Korean text → Korean display, English IDs)
+node plugins/oh-my-goal/scripts/intake-question-engine.mjs --objective "계산기 앱을 웹사이트 형태로 만들어줘" --format payload
+node plugins/oh-my-goal/scripts/intake-question-runtime.mjs --objective "계산기 앱을 웹사이트 형태로 만들어줘" --mode auto --json
+
+# worker lanes and the leader-side loop
+node plugins/oh-my-goal/scripts/team-runtime.mjs launch --objective "implement UI, write tests, update docs" --workers 3 --mode auto --json
+node plugins/oh-my-goal/scripts/team-runtime.mjs tick --team implement-ui-write-tests-updat --pressure-slug example --json
+
+# local-optimum pressure
+node plugins/oh-my-goal/scripts/pressure-runtime.mjs init --objective "implement UI, write tests, update docs" --slug example --json
+
+# add quality-pruning files to a harness created before they existed
+node plugins/oh-my-goal/scripts/migrate-quality-pruning.mjs --slug old-harness --apply --json
+```
+
+| Variable | What it does |
+| --- | --- |
+| `OPENAI_API_KEY` | Optional. Enables LLM repo-review questions during intake. Captured into `.env.local` by the key runtime, never printed. |
+| `ZEP_API_KEY` | Optional. Preflighted alongside the OpenAI key. |
+| `OH_MY_GOAL_PLUGIN_ROOT` | Overrides where generated harnesses look for the plugin scripts. |
+
+---
+
+## Building and testing
 
 ```bash
 npm install
-npm run build
+npm run build                 # tsc → dist/, makes dist/cli/omg.js executable
+npm run lint                  # biome lint src
+npm run check:no-unused       # stricter unused-code tsconfig
+npm run verify:plugin-bundle  # validates the packaged plugin structure and public surface
+npm run test:node             # node --test: plugin, package contract, goal harness and workflow suites
+npm test                      # build + verify + test:node
+npm run smoke:packed-install  # packs the tarball and installs it into a temp project
+```
+
+CI ([`ci.yml`](.github/workflows/ci.yml)) runs build, lint, unused-code check, plugin-bundle verification, the Node tests and `npm pack --dry-run` on every push to `main` and every pull request. To develop the plugin against a local checkout:
+
+```bash
 node plugins/oh-my-goal/scripts/create-harness.mjs --objective "Ship this safely" --print-interview
-node plugins/oh-my-goal/scripts/create-harness.mjs \
-  --objective "Ship this safely" \
-  --interview-complete \
-  --answers-json '{"acceptance":"goal-ready harness","nonGoals":"no implementation yet","verification":"inspect Markdown"}'
 codex plugin marketplace add "$PWD"
 codex plugin add oh-my-goal@oh-my-goal-local
 ```
 
-## What It Does
+---
 
-- Refines a raw request into a single Codex goal prompt.
-- Parses `$oh-my-goal <objective>` directly without re-asking for the objective.
-- Runs Oh My Goal-style structured deep-interview intake when scope or acceptance criteria are unclear.
-- Renders Korean intake questions/options for Korean objectives while preserving English internal values.
-- Runs quality frontier expansion and pruning before path selection.
-- Adds a design-system artifact for UI quality before implementation starts.
-- Captures Vercel deployment, LLM API, auth, secret-handling, and credential setup decisions early.
-- Writes Markdown harness files under `.omg/harness/<slug>/`.
-- Sets up leader, architect, designer, implementer, tester, deployer, critic, and replanner lane instructions.
-- Provides an optional Team runtime bridge with Oh My Goal worker state plus visible cmux/tmux worker panes.
-- Provides a pressure runtime that enforces trajectory comparison, critic pressure, perturbation, and completion gating.
-- Treats execution as trajectory search instead of premature convergence.
-- Uses optional Codex subagent/worker lanes for research, implementation, testing, critique, or replanning evidence.
-- Requires objective audit, implementation evidence, external verification, quality pruning evidence, adversarial review, and basin-escape convergence checks before completion.
+## Scripts
 
-Codex goal ownership remains with the leader session. Workers must not call `create_goal` or `update_goal`; they return evidence, diffs, blockers, risks, test output, and candidate trajectory scores.
+| Script | What it does |
+| --- | --- |
+| `scripts/create-harness.mjs` | Writes `.omg/harness/<slug>/`. `--print-interview` prints the questionnaire; generation requires `--interview-complete --answers-json`. |
+| `scripts/intake-question-engine.mjs` | Builds the two-stage questionnaire payload; `--repo-review --llm auto` adds folder-aware questions; `--locale ko\|en` overrides detection. |
+| `scripts/intake-question-runtime.mjs` | Renders intake in cmux, tmux, a macOS Terminal window, or sequential fallback. |
+| `scripts/openai-key-runtime.mjs` | `offer` / `ensure` API-key preflight with hidden input into `.env.local`. |
+| `scripts/team-runtime.mjs` + `team-core.mjs` | `plan`, `launch`, `tick`, `watch`, `status`, `collect`, `shutdown` for worker lanes and their state files. |
+| `scripts/pressure-runtime.mjs` | `init`, `status`, `record`, `select`, `step`, `perturb`, `team-command`, `import-team`, `gate`. |
+| `scripts/design-system-runtime.mjs` | Project-specific `design-system.md` without the upstream UI/UX Pro Max CLI. |
+| `scripts/deployment-runtime.mjs` | `plan`, `check`, `setup-env`, `deploy` for Vercel, API keys, auth and env readiness. |
+| `scripts/cmux-bridge-runtime.mjs` + `cmux-bridge-client.mjs` | File bridge for cmux when the Codex sandbox cannot reach the socket. |
+| `scripts/migrate-quality-pruning.mjs` | Adds quality-pruning scaffolds to older harnesses without overwriting existing files. |
+| `omg` (`dist/cli/omg.js`) | Compatibility CLI: `refine`, `interview`, `plan`, `create`, `start`, `status`, `sync-goal`, `record-trajectory`, `select`, `step`, `perturb`, `team-plan`, `team-packet`, `import-worker-result`, `challenge`, `worker-instruction`, `gate`, `complete`. `omg help` lists them. |
 
-## Development
+---
 
-```bash
-npm run build
-npm run lint
-npm run check:no-unused
-node --test dist/cli/__tests__/oh-my-goal-plugin.test.js
-npm run smoke:packed-install
-```
+## Repository structure
 
-This repository is now scoped around the Codex plugin skill and its supporting CLI helpers. Keep new public docs, tests, and package contents aligned with that plugin-first surface.
+| Path | What lives there |
+| --- | --- |
+| `plugins/oh-my-goal/` | The Codex plugin: `.codex-plugin/plugin.json`, the `oh-my-goal` skill (SKILL, FLOW, flows, templates, references) and the runtime `scripts/*.mjs`. |
+| `.agents/plugins/marketplace.json` | The `oh-my-goal-local` marketplace entry that `codex plugin add` resolves. |
+| `src/cli/` | `omg.ts` (bin shim), `omg-main.ts` (subcommands and help), `goal-harness.ts`. |
+| `src/goal-harness/` | Harness policy, planning, runtime, status, completion, perturbation, team packets and results. |
+| `src/goal-workflows/` | Artifact writers, Codex goal snapshot, handoff and validation helpers. |
+| `src/scripts/` | Plugin bundle verification, packed-install smoke, git-build preparation. |
+| `src/**/__tests__/` | Colocated `node:test` suites, run from `dist/` after build. |
+| `AGENTS.md` | Repository guidelines for agents working on this codebase. |
+| `.github/` | CI workflow, issue and PR templates, Dependabot. |
+
+---
+
+## Project status
+
+**Working today.** The plugin skill, two-stage intake with Korean localization, interactive intake in cmux/tmux/macOS Terminal with sequential fallback, harness generation, the Team runtime with visible panes and leader-side `tick`/`watch`, the pressure runtime and gate, design-system and deployment runtimes, the cmux file bridge, the migration script and the `omg` compatibility CLI. Version `0.18.29`; the plugin manifest carries the same version with a `+codex.<timestamp>` build suffix.
+
+**Known limitations.** Visible worker lanes need an attached cmux or tmux surface; without one `--mode auto` keeps the same worker packets so Codex runs lanes sequentially. Mandatory-Team harnesses with `--require-interactive` report the blocker rather than continuing leader-only. `deploy` and `setup-env --execute` require an attached terminal. Runtime state under `.omg/runtime/`, `.omg/goals/` and `.omg/design-systems/` is git-ignored by design.
+
+**Scope.** This repository is scoped around the Codex plugin skill and its supporting CLI helpers. Keep new public docs, tests and package contents aligned with that plugin-first surface; do not reintroduce launcher-only flows as the primary UX.
+
+---
 
 ## License
 
-MIT
+`package.json` and the plugin manifest declare MIT, but no LICENSE file is committed yet, so default copyright applies: all rights reserved until one is added.
