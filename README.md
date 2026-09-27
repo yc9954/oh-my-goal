@@ -131,7 +131,7 @@ codex plugin add oh-my-goal@oh-my-goal-local
 Then, in Codex:
 
 ```text
-$oh-my-goal ralpli PRD 작성하고 싶어
+$oh-my-goal I want to write a PRD for ralpli
 ```
 
 Answer the questionnaire. Once intake is complete the harness lands in `.omg/harness/<slug>/` and the leader is pointed at `goal-prompt.md`.
@@ -143,8 +143,8 @@ Answer the questionnaire. Once intake is complete the harness lands in `.omg/har
 node plugins/oh-my-goal/scripts/openai-key-runtime.mjs ensure --cwd "$PWD" --keys OPENAI_API_KEY,ZEP_API_KEY --json
 
 # generate the intake payload for an objective (Korean text → Korean display, English IDs)
-node plugins/oh-my-goal/scripts/intake-question-engine.mjs --objective "계산기 앱을 웹사이트 형태로 만들어줘" --format payload
-node plugins/oh-my-goal/scripts/intake-question-runtime.mjs --objective "계산기 앱을 웹사이트 형태로 만들어줘" --mode auto --json
+node plugins/oh-my-goal/scripts/intake-question-engine.mjs --objective "Build a calculator app as a website" --format payload
+node plugins/oh-my-goal/scripts/intake-question-runtime.mjs --objective "Build a calculator app as a website" --mode auto --json
 
 # worker lanes and the leader-side loop
 node plugins/oh-my-goal/scripts/team-runtime.mjs launch --objective "implement UI, write tests, update docs" --workers 3 --mode auto --json
